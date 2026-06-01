@@ -1,0 +1,31 @@
+# dependencies
+node_modules/
+
+# builds
+dist/
+.next/
+out/
+build/
+*.tsbuildinfo
+next-env.d.ts
+
+# env (committed: *.env.example only)
+.env
+.env*.local
+
+# local application data — metadata store + encryption key (never commit)
+.relay/
+apps/api/prisma/*.db
+apps/api/prisma/*.db-journal
+apps/api/prisma/*.db-wal
+apps/api/prisma/*.db-shm
+
+# misc
+.DS_Store
+*.pem
+coverage/
+*-debug.log*
+.pnpm-debug.log*
+
+# local agent settings
+.claude/

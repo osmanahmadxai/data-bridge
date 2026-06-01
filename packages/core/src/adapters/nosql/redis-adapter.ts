@@ -1,0 +1,330 @@
+/**
+ * Redis adapter. Redis has no tables, so we model the keyspace as a single
+ * virtual relation ("keys") whose rows are { key, type, ttl, value }. The query
+ * editor accepts raw Redis commands, one per line.
+ */
+import Redis from 'ioredis';
+import type {
+  AdapterCapabilities,
+  BrowseParams,
+  BrowseResult,
+  ConnectionConfig,
+  DatabaseAdapter,
+  DatabaseSchema,
+  DeleteRowParams,
+  InsertRowParams,
+  QueryResult,
+  UpdateRowParams,
+} from '../types';
+import { ConnectionError, QueryError, UnsupportedError } from '../../errors';
+
+export const REDIS_CAPABILITIES: AdapterCapabilities = {
+  query: true,
+  queryLanguage: 'redis',
+  schemas: false,
+  multipleDatabases: true,
+  foreignKeys: false,
+  rowEditing: true,
+  transactions: false,
+  ddl: false,
+  manageDatabases: false,
+};
+
+const KEYSPACE = 'keys';
+
+export class RedisAdapter implements DatabaseAdapter {
+  readonly engine = 'redis' as const;
+  readonly capabilities = REDIS_CAPABILITIES;
+
+  private readonly config: ConnectionConfig;
+  private client: Redis | null = null;
+
+  constructor(config: ConnectionConfig) {
+    this.config = config;
+  }
+
+  private getClient(): Redis {
+    if (this.client) return this.client;
+    const dbIndex = Number(
+      this.config.options?.db ?? this.config.database ?? 0,
+    );
+    this.client = this.config.connectionString
+      ? new Redis(this.config.connectionString, {
+          lazyConnect: true,
+          maxRetriesPerRequest: 2,
+        })
+      : new Redis({
+          host: this.config.host ?? 'localhost',
+          port: this.config.port ?? 6379,
+          username: this.config.user || undefined,
+          password: this.config.password || undefined,
+          db: Number.isFinite(dbIndex) ? dbIndex : 0,
+          tls: this.config.ssl ? {} : undefined,
+          lazyConnect: true,
+          maxRetriesPerRequest: 2,
+          connectTimeout: 8000,
+        });
+    return this.client;
+  }
+
+  async connect(): Promise<void> {
+    try {
+      await this.getClient().connect();
+    } catch (err) {
+      throw new ConnectionError(
+        `Could not connect to Redis: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  async ping(): Promise<void> {
+    const client = this.getClient();
+    if (client.status !== 'ready') await client.connect().catch(() => {});
+    const pong = await client.ping();
+    if (pong !== 'PONG') throw new ConnectionError('Redis did not respond');
+  }
+
+  async close(): Promise<void> {
+    this.client?.disconnect();
+    this.client = null;
+  }
+
+  async listDatabases(): Promise<string[]> {
+    // Redis exposes a fixed set of numbered logical databases.
+    return Array.from({ length: 16 }, (_, i) => `db${i}`);
+  }
+
+  async getSchema(): Promise<DatabaseSchema> {
+    return {
+      database: `db${this.config.options?.db ?? 0}`,
+      namespaces: [
+        {
+          name: '',
+          tables: [
+            {
+              name: KEYSPACE,
+              kind: 'keyspace',
+              columns: [
+                {
+                  name: 'key',
+                  dataType: 'string',
+                  nullable: false,
+                  isPrimaryKey: true,
+                  isUnique: true,
+                  isAutoIncrement: false,
+                  defaultValue: null,
+                  comment: null,
+                  references: null,
+                },
+                ...['type', 'ttl', 'value'].map((name) => ({
+                  name,
+                  dataType: 'string',
+                  nullable: true,
+                  isPrimaryKey: false,
+                  isUnique: false,
+                  isAutoIncrement: false,
+                  defaultValue: null,
+                  comment: null,
+                  references: null,
+                })),
+              ],
+              indexes: [],
+              foreignKeys: [],
+              primaryKey: ['key'],
+              estimatedRows: null,
+              comment: null,
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  private async readKey(
+    client: Redis,
+    key: string,
+  ): Promise<Record<string, unknown>> {
+    const type = await client.type(key);
+    const ttl = await client.ttl(key);
+    let value: unknown;
+    switch (type) {
+      case 'string':
+        value = await client.get(key);
+        break;
+      case 'list':
+        value = await client.lrange(key, 0, 24);
+        break;
+      case 'set':
+        value = await client.smembers(key);
+        break;
+      case 'zset':
+        value = await client.zrange(key, 0, 24, 'WITHSCORES');
+        break;
+      case 'hash':
+        value = await client.hgetall(key);
+        break;
+      default:
+        value = null;
+    }
+    return { key, type, ttl, value };
+  }
+
+  async browse(params: BrowseParams): Promise<BrowseResult> {
+    const client = this.getClient();
+    if (client.status !== 'ready') await client.connect().catch(() => {});
+
+    const match =
+      params.filters?.find((f) => f.column === 'key')?.value ?? '*';
+    const pattern =
+      typeof match === 'string' && match ? `*${match}*` : '*';
+
+    const limit = Math.min(Math.max(params.limit, 1), 500);
+    const started = performance.now();
+
+    const keys: string[] = [];
+    let cursor = '0';
+    do {
+      const [next, batch] = await client.scan(
+        cursor,
+        'MATCH',
+        pattern,
+        'COUNT',
+        100,
+      );
+      keys.push(...batch);
+      cursor = next;
+    } while (cursor !== '0' && keys.length < params.offset + limit);
+
+    const page = keys.slice(params.offset, params.offset + limit);
+    const rows = await Promise.all(page.map((k) => this.readKey(client, k)));
+    const dbsize = await client.dbsize().catch(() => null);
+    const hasMore = keys.length > params.offset + limit || cursor !== '0';
+
+    return {
+      columns: ['key', 'type', 'ttl', 'value'].map((name) => ({ name })),
+      rows,
+      rowCount: rows.length,
+      executionMs: Math.round(performance.now() - started),
+      command: 'scan',
+      total: dbsize,
+      estimated: true,
+      hasMore,
+      primaryKey: ['key'],
+    };
+  }
+
+  async query(statement: string): Promise<QueryResult> {
+    const client = this.getClient();
+    if (client.status !== 'ready') await client.connect().catch(() => {});
+
+    const lines = statement
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith('#'));
+
+    const rows: Array<Record<string, unknown>> = [];
+    const started = performance.now();
+    try {
+      for (const line of lines) {
+        const parts = tokenizeCommand(line);
+        if (parts.length === 0) continue;
+        const [cmd, ...args] = parts;
+        const reply = await client.call(cmd!, ...args);
+        rows.push({ command: line, reply: stringifyReply(reply) });
+      }
+    } catch (err) {
+      throw new QueryError((err as Error).message);
+    }
+
+    return {
+      columns: [
+        { name: 'command' },
+        { name: 'reply' },
+      ],
+      rows,
+      rowCount: rows.length,
+      executionMs: Math.round(performance.now() - started),
+      command: 'redis',
+    };
+  }
+
+  async insertRow(p: InsertRowParams): Promise<QueryResult> {
+    const client = this.getClient();
+    if (client.status !== 'ready') await client.connect().catch(() => {});
+    const key = String(p.values.key ?? '');
+    if (!key) throw new QueryError('A "key" value is required');
+    await client.set(key, String(p.values.value ?? ''));
+    return writeResult(1, 'set');
+  }
+
+  async updateRow(p: UpdateRowParams): Promise<QueryResult> {
+    const client = this.getClient();
+    if (client.status !== 'ready') await client.connect().catch(() => {});
+    const key = String(p.identity.key ?? '');
+    if ('value' in p.changes) await client.set(key, String(p.changes.value));
+    if ('ttl' in p.changes) {
+      const ttl = Number(p.changes.ttl);
+      if (ttl > 0) await client.expire(key, ttl);
+      else await client.persist(key);
+    }
+    return writeResult(1, 'set');
+  }
+
+  async deleteRow(p: DeleteRowParams): Promise<QueryResult> {
+    const client = this.getClient();
+    if (client.status !== 'ready') await client.connect().catch(() => {});
+    const removed = await client.del(String(p.identity.key ?? ''));
+    return writeResult(removed, 'del');
+  }
+
+  /* ----- schema management: not applicable to a key-value store ----- */
+
+  private ddlUnsupported(): never {
+    throw new UnsupportedError('Redis does not support tables or databases.');
+  }
+  async createTable(): Promise<void> {
+    this.ddlUnsupported();
+  }
+  async dropTable(): Promise<void> {
+    this.ddlUnsupported();
+  }
+  async truncateTable(): Promise<void> {
+    this.ddlUnsupported();
+  }
+  async createDatabase(): Promise<void> {
+    this.ddlUnsupported();
+  }
+  async dropDatabase(): Promise<void> {
+    this.ddlUnsupported();
+  }
+}
+
+/* ----- helpers ----- */
+
+function tokenizeCommand(line: string): string[] {
+  const tokens: string[] = [];
+  const re = /"([^"]*)"|'([^']*)'|(\S+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(line)) !== null) {
+    tokens.push(m[1] ?? m[2] ?? m[3] ?? '');
+  }
+  return tokens;
+}
+
+function stringifyReply(reply: unknown): string {
+  if (reply === null || reply === undefined) return '(nil)';
+  if (Array.isArray(reply)) return JSON.stringify(reply);
+  if (Buffer.isBuffer(reply)) return reply.toString('utf8');
+  return String(reply);
+}
+
+function writeResult(affected: number, command: string): QueryResult {
+  return {
+    columns: [],
+    rows: [],
+    rowCount: affected,
+    affectedRows: affected,
+    executionMs: 0,
+    command,
+  };
+}
