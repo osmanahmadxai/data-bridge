@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import {
   type ConnectionConfig,
+  backupSchema,
   browseSchema,
   connectionInputSchema,
   createTableSchema,
@@ -19,6 +20,7 @@ import {
   insertRowSchema,
   querySchema,
   relationRefSchema,
+  restoreSchema,
   updateRowSchema,
   type ConnectionInputDTO,
 } from '@relay/core';
@@ -35,6 +37,8 @@ type DeleteDTO = z.infer<typeof deleteRowSchema>;
 type CreateTableDTO = z.infer<typeof createTableSchema>;
 type DatabaseNameDTO = z.infer<typeof databaseNameSchema>;
 type RelationRefDTO = z.infer<typeof relationRefSchema>;
+type BackupDTO = z.infer<typeof backupSchema>;
+type RestoreDTO = z.infer<typeof restoreSchema>;
 
 @Controller('connections')
 export class ConnectionsController {
@@ -227,5 +231,36 @@ export class ConnectionsController {
       a.truncateTable(dto.table, dto.schema),
     );
     return { success: true };
+  }
+
+  /* ----- backup & restore ----- */
+
+  @Post(':id/backup')
+  async backup(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(backupSchema)) dto: BackupDTO,
+    @Query('database') database?: string,
+  ): Promise<{ filename: string; format: string; content: string }> {
+    const content = await this.pool.withAdapter(id, database || undefined, (a) =>
+      a.backup(dto),
+    );
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    const base = (database || 'backup').replace(/[^\w.-]+/g, '_');
+    return {
+      filename: `${base}-${stamp}.${dto.format === 'sql' ? 'sql' : 'json'}`,
+      format: dto.format,
+      content,
+    };
+  }
+
+  @Post(':id/restore')
+  async restore(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(restoreSchema)) dto: RestoreDTO,
+    @Query('database') database?: string,
+  ) {
+    return this.pool.withAdapter(id, database || undefined, (a) =>
+      a.restore(dto.content, dto.format),
+    );
   }
 }

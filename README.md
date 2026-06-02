@@ -58,6 +58,10 @@ interactive **ER diagram**, and full **DDL**: create / drop / truncate tables
 with a column builder (primary key, auto-increment, unique, defaults) and
 create / drop databases.
 
+🧰 **Backup & restore** — one-click dumps of a whole database or a single
+table (portable **JSON** for any engine, or a **`.sql`** script for relational
+engines), and restore straight from a file.
+
 🎨 **Designed to live in** — shadcn/ui, light & dark themes, resizable panels,
 keyboard-friendly, and quiet.
 

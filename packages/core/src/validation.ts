@@ -117,3 +117,18 @@ export const relationRefSchema = z.object({
   schema: z.string().optional(),
   table: z.string().min(1),
 });
+
+/* ----- backup & restore ----- */
+
+export const backupFormatSchema = z.enum(['json', 'sql']);
+
+export const backupSchema = z.object({
+  format: backupFormatSchema.default('json'),
+  tables: z.array(z.string()).optional(),
+  schema: z.string().optional(),
+});
+
+export const restoreSchema = z.object({
+  format: backupFormatSchema.default('json'),
+  content: z.string().min(1),
+});
