@@ -24,6 +24,7 @@ export const POSTGRES_CAPABILITIES: AdapterCapabilities = {
   transactions: true,
   ddl: true,
   manageDatabases: true,
+  backupFormats: ['json', 'sql'],
 };
 
 export class PostgresAdapter extends BaseSqlAdapter {
@@ -91,6 +92,10 @@ export class PostgresAdapter extends BaseSqlAdapter {
 
   protected override serialType(): string {
     return 'SERIAL';
+  }
+
+  protected override booleanLiteral(value: boolean): string {
+    return value ? 'TRUE' : 'FALSE';
   }
 
   protected override async runSql(

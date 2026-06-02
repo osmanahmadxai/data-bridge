@@ -6,6 +6,9 @@
 import Redis from 'ioredis';
 import type {
   AdapterCapabilities,
+  BackupDocument,
+  BackupFormat,
+  BackupOptions,
   BrowseParams,
   BrowseResult,
   ConnectionConfig,
@@ -14,9 +17,15 @@ import type {
   DeleteRowParams,
   InsertRowParams,
   QueryResult,
+  RestoreResult,
   UpdateRowParams,
 } from '../types';
-import { ConnectionError, QueryError, UnsupportedError } from '../../errors';
+import {
+  BadRequestError,
+  ConnectionError,
+  QueryError,
+  UnsupportedError,
+} from '../../errors';
 
 export const REDIS_CAPABILITIES: AdapterCapabilities = {
   query: true,
@@ -28,6 +37,7 @@ export const REDIS_CAPABILITIES: AdapterCapabilities = {
   transactions: false,
   ddl: false,
   manageDatabases: false,
+  backupFormats: ['json'],
 };
 
 const KEYSPACE = 'keys';
@@ -296,6 +306,105 @@ export class RedisAdapter implements DatabaseAdapter {
   }
   async dropDatabase(): Promise<void> {
     this.ddlUnsupported();
+  }
+
+  /* ----- backup & restore (every key in the current DB) ----- */
+
+  async backup(opts: BackupOptions): Promise<string> {
+    if (opts.format !== 'json') {
+      throw new UnsupportedError('Redis supports JSON backups only.');
+    }
+    const client = this.getClient();
+    if (client.status !== 'ready') await client.connect().catch(() => {});
+
+    const keys: string[] = [];
+    let cursor = '0';
+    do {
+      const [next, batch] = await client.scan(cursor, 'COUNT', 500);
+      keys.push(...batch);
+      cursor = next;
+    } while (cursor !== '0');
+
+    const rows = await Promise.all(keys.map((k) => this.readKey(client, k)));
+    const doc: BackupDocument = {
+      relay: 'backup',
+      version: 1,
+      engine: this.engine,
+      database: `db${this.config.options?.db ?? this.config.database ?? 0}`,
+      createdAt: new Date().toISOString(),
+      tables: [
+        {
+          name: KEYSPACE,
+          primaryKey: ['key'],
+          columns: ['key', 'type', 'ttl', 'value'],
+          rows,
+        },
+      ],
+    };
+    return JSON.stringify(doc, null, 2);
+  }
+
+  async restore(content: string, format: BackupFormat): Promise<RestoreResult> {
+    if (format !== 'json') {
+      throw new UnsupportedError('Redis supports JSON restores only.');
+    }
+    let doc: BackupDocument;
+    try {
+      doc = JSON.parse(content) as BackupDocument;
+    } catch {
+      throw new BadRequestError('Backup file is not valid JSON');
+    }
+    if (doc.relay !== 'backup' || !Array.isArray(doc.tables)) {
+      throw new BadRequestError('Not a Relay backup file');
+    }
+    const client = this.getClient();
+    if (client.status !== 'ready') await client.connect().catch(() => {});
+
+    let rows = 0;
+    for (const table of doc.tables) {
+      for (const row of table.rows) {
+        await this.writeKey(client, row);
+        rows++;
+      }
+    }
+    return { tables: doc.tables.length, rows };
+  }
+
+  private async writeKey(
+    client: Redis,
+    row: Record<string, unknown>,
+  ): Promise<void> {
+    const key = String(row.key ?? '');
+    if (!key) return;
+    const type = String(row.type ?? 'string');
+    const value = row.value;
+    await client.del(key);
+    switch (type) {
+      case 'list':
+        if (Array.isArray(value) && value.length)
+          await client.rpush(key, ...value.map(String));
+        break;
+      case 'set':
+        if (Array.isArray(value) && value.length)
+          await client.sadd(key, ...value.map(String));
+        break;
+      case 'zset':
+        if (Array.isArray(value)) {
+          // stored as [member, score, member, score, ...]
+          for (let i = 0; i + 1 < value.length; i += 2) {
+            await client.zadd(key, String(value[i + 1]), String(value[i]));
+          }
+        }
+        break;
+      case 'hash':
+        if (value && typeof value === 'object')
+          await client.hset(key, value as Record<string, string>);
+        break;
+      default:
+        await client.set(key, String(value ?? ''));
+    }
+    const ttl = Number(row.ttl);
+    if (Number.isFinite(ttl) && ttl > 0) await client.expire(key, ttl);
   }
 }
 

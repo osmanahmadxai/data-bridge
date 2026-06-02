@@ -1,10 +1,13 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   AlertCircle,
+  Archive,
   Database,
+  DatabaseBackup,
+  Download,
   Eraser,
   Eye,
   KeyRound,
@@ -15,10 +18,12 @@ import {
   SquareTerminal,
   Table2,
   Trash2,
+  Upload,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { RelationKind, TableSchema } from '@relay/core';
+import type { BackupFormat, RelationKind, TableSchema } from '@relay/core';
 import { api, ApiError } from '@/lib/api';
+import { downloadText } from '@/lib/export';
 import {
   useConnections,
   useDatabases,
@@ -78,6 +83,8 @@ export function SchemaTree() {
   const canQuery = driver?.capabilities.queryLanguage === 'sql';
   const canDdl = !!driver?.capabilities.ddl;
   const canManageDb = !!driver?.capabilities.manageDatabases;
+  const backupFormats = driver?.capabilities.backupFormats ?? [];
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const { data: databases } = useDatabases(
     driver?.capabilities.multipleDatabases ? activeConnectionId : null,
@@ -125,6 +132,55 @@ export function SchemaTree() {
       toast.success(`Dropped ${table}`);
     } catch (err) {
       toast.error('Drop failed', {
+        description: err instanceof ApiError ? err.message : String(err),
+      });
+    }
+  }
+
+  async function handleBackup(format: BackupFormat, table?: TableSchema) {
+    try {
+      const res = await api.backup(
+        activeConnectionId as string,
+        {
+          format,
+          tables: table ? [table.name] : undefined,
+          schema: table?.schema,
+        },
+        activeDatabase,
+      );
+      downloadText(res.filename, res.content);
+      toast.success('Backup downloaded', { description: res.filename });
+    } catch (err) {
+      toast.error('Backup failed', {
+        description: err instanceof ApiError ? err.message : String(err),
+      });
+    }
+  }
+
+  async function handleRestoreFile(file: File) {
+    const format: BackupFormat = file.name.endsWith('.sql') ? 'sql' : 'json';
+    if (
+      !window.confirm(
+        `Restore from "${file.name}"? This writes data into the current database.`,
+      )
+    )
+      return;
+    try {
+      const content = await file.text();
+      const res = await api.restore(
+        activeConnectionId as string,
+        { format, content },
+        activeDatabase,
+      );
+      await refreshSchema();
+      await qc.invalidateQueries({
+        queryKey: ['connections', activeConnectionId, 'browse'],
+      });
+      toast.success(
+        `Restored ${res.rows} row(s)${res.tables ? ` across ${res.tables} table(s)` : ''}`,
+      );
+    } catch (err) {
+      toast.error('Restore failed', {
         description: err instanceof ApiError ? err.message : String(err),
       });
     }
@@ -214,7 +270,46 @@ export function SchemaTree() {
             <Plus className="h-4 w-4" />
           </Button>
         )}
+        {backupFormats.length > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8 shrink-0"
+                title="Backup / restore"
+              >
+                <DatabaseBackup className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {backupFormats.map((fmt) => (
+                <DropdownMenuItem key={fmt} onClick={() => handleBackup(fmt)}>
+                  <Download className="mr-2 h-4 w-4" />
+                  Download backup ({fmt.toUpperCase()})
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => fileRef.current?.click()}>
+                <Upload className="mr-2 h-4 w-4" />
+                Restore from file…
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
+
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".json,.sql,application/json,text/plain"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = '';
+          if (file) void handleRestoreFile(file);
+        }}
+      />
 
       <ScrollArea className="min-h-0 flex-1 px-2">
         {isLoading && (
@@ -298,6 +393,14 @@ export function SchemaTree() {
                           >
                             <SquareTerminal className="mr-2 h-4 w-4" />
                             Open SELECT
+                          </DropdownMenuItem>
+                        )}
+                        {backupFormats.length > 0 && (
+                          <DropdownMenuItem
+                            onClick={() => handleBackup('json', table)}
+                          >
+                            <Archive className="mr-2 h-4 w-4" />
+                            Backup table
                           </DropdownMenuItem>
                         )}
                         {canDdl && (

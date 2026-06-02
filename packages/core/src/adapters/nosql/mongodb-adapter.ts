@@ -6,6 +6,9 @@
 import { MongoClient, ObjectId, type Db } from 'mongodb';
 import type {
   AdapterCapabilities,
+  BackupDocument,
+  BackupFormat,
+  BackupOptions,
   BrowseParams,
   BrowseResult,
   ColumnSchema,
@@ -17,6 +20,7 @@ import type {
   FilterSpec,
   InsertRowParams,
   QueryResult,
+  RestoreResult,
   TableSchema,
   UpdateRowParams,
 } from '../types';
@@ -39,6 +43,7 @@ export const MONGODB_CAPABILITIES: AdapterCapabilities = {
   // implicitly by adding a collection, so we don't expose explicit DB creation.
   ddl: true,
   manageDatabases: false,
+  backupFormats: ['json'],
 };
 
 const SAMPLE_SIZE = 50;
@@ -284,6 +289,69 @@ export class MongodbAdapter implements DatabaseAdapter {
   async dropDatabase(name: string): Promise<void> {
     const client = await this.getClient();
     await client.db(name).dropDatabase();
+  }
+
+  /* ----- backup & restore ----- */
+
+  async backup(opts: BackupOptions): Promise<string> {
+    if (opts.format !== 'json') {
+      throw new UnsupportedError('MongoDB supports JSON backups only.');
+    }
+    const db = await this.getDb();
+    let names = (await db.listCollections().toArray()).map((c) => c.name);
+    if (opts.tables?.length) {
+      const wanted = new Set(opts.tables);
+      names = names.filter((n) => wanted.has(n));
+    }
+
+    const doc: BackupDocument = {
+      relay: 'backup',
+      version: 1,
+      engine: this.engine,
+      database: db.databaseName,
+      createdAt: new Date().toISOString(),
+      tables: [],
+    };
+    for (const name of names) {
+      const docs = await db.collection(name).find({}).toArray();
+      const rows = docs.map(normalizeDoc);
+      doc.tables.push({
+        name,
+        primaryKey: ['_id'],
+        columns: inferColumns(docs).map((c) => c.name),
+        rows,
+      });
+    }
+    return JSON.stringify(doc, null, 2);
+  }
+
+  async restore(content: string, format: BackupFormat): Promise<RestoreResult> {
+    if (format !== 'json') {
+      throw new UnsupportedError('MongoDB supports JSON restores only.');
+    }
+    let doc: BackupDocument;
+    try {
+      doc = JSON.parse(content) as BackupDocument;
+    } catch {
+      throw new BadRequestError('Backup file is not valid JSON');
+    }
+    if (doc.relay !== 'backup' || !Array.isArray(doc.tables)) {
+      throw new BadRequestError('Not a Relay backup file');
+    }
+    const db = await this.getDb();
+    let rows = 0;
+    for (const table of doc.tables) {
+      await db.createCollection(table.name).catch(() => undefined);
+      if (table.rows.length > 0) {
+        const docs = table.rows.map((r) => coerceId({ ...r }));
+        await db
+          .collection(table.name)
+          .insertMany(docs, { ordered: false })
+          .catch(() => undefined);
+        rows += table.rows.length;
+      }
+    }
+    return { tables: doc.tables.length, rows };
   }
 }
 

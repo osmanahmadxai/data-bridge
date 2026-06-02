@@ -9,6 +9,9 @@
  */
 import type {
   AdapterCapabilities,
+  BackupDocument,
+  BackupFormat,
+  BackupOptions,
   BrowseParams,
   BrowseResult,
   ColumnDefinition,
@@ -21,9 +24,13 @@ import type {
   FilterSpec,
   InsertRowParams,
   QueryResult,
+  RestoreResult,
+  TableSchema,
   UpdateRowParams,
 } from '../types';
 import { BadRequestError } from '../../errors';
+
+const RESTORE_BATCH = 500;
 
 /** Reject identifiers that aren't safe to embed in DDL (which can't be bound). */
 export function assertSafeIdentifier(name: string): string {
@@ -382,6 +389,190 @@ export abstract class BaseSqlAdapter implements DatabaseAdapter {
     );
   }
 
+  /* ----- backup & restore ----- */
+
+  /** Boolean literal for SQL dumps (Postgres → TRUE/FALSE, others → 1/0). */
+  protected booleanLiteral(value: boolean): string {
+    return value ? '1' : '0';
+  }
+
+  private async targetTables(opts: BackupOptions): Promise<TableSchema[]> {
+    const schema = await this.getSchema();
+    let tables = schema.namespaces.flatMap((ns) => ns.tables);
+    tables = tables.filter((t) => t.kind === 'table');
+    if (opts.schema) tables = tables.filter((t) => (t.schema ?? '') === opts.schema);
+    if (opts.tables?.length) {
+      const wanted = new Set(opts.tables);
+      tables = tables.filter((t) => wanted.has(t.name));
+    }
+    return tables;
+  }
+
+  async backup(opts: BackupOptions): Promise<string> {
+    const { database } = await this.getSchema();
+    const tables = await this.targetTables(opts);
+
+    if (opts.format === 'json') {
+      const doc: BackupDocument = {
+        relay: 'backup',
+        version: 1,
+        engine: this.engine,
+        database,
+        createdAt: new Date().toISOString(),
+        tables: [],
+      };
+      for (const t of tables) {
+        const res = await this.runSql(
+          `SELECT * FROM ${this.qualify(t.name, t.schema)}`,
+          [],
+        );
+        doc.tables.push({
+          name: t.name,
+          schema: t.schema,
+          primaryKey: t.primaryKey,
+          columns: t.columns.map((c) => c.name),
+          rows: res.rows,
+        });
+      }
+      return JSON.stringify(doc, null, 2);
+    }
+
+    // SQL dump: DDL + INSERT statements.
+    const out: string[] = [
+      `-- Relay SQL backup`,
+      `-- engine: ${this.engine}`,
+      `-- database: ${database}`,
+      ``,
+    ];
+    for (const t of tables) {
+      out.push(this.createTableDump(t), ``);
+      const res = await this.runSql(
+        `SELECT * FROM ${this.qualify(t.name, t.schema)}`,
+        [],
+      );
+      if (res.rows.length === 0) continue;
+      const cols = t.columns.map((c) => c.name);
+      const colSql = cols.map((c) => this.quoteIdent(c)).join(', ');
+      const target = this.qualify(t.name, t.schema);
+      for (const row of res.rows) {
+        const values = cols.map((c) => this.sqlLiteral(row[c])).join(', ');
+        out.push(`INSERT INTO ${target} (${colSql}) VALUES (${values});`);
+      }
+      out.push(``);
+    }
+    return out.join('\n');
+  }
+
+  private createTableDump(t: TableSchema): string {
+    const defs = t.columns.map((c) => {
+      let s = `  ${this.quoteIdent(c.name)} ${c.dataType}`;
+      if (!c.nullable) s += ' NOT NULL';
+      // Skip sequence-backed defaults — they aren't portable in a logical dump.
+      if (c.defaultValue && !/nextval|auto_increment/i.test(c.defaultValue)) {
+        s += ` DEFAULT ${c.defaultValue}`;
+      }
+      return s;
+    });
+    if (t.primaryKey.length) {
+      defs.push(
+        `  PRIMARY KEY (${t.primaryKey.map((c) => this.quoteIdent(c)).join(', ')})`,
+      );
+    }
+    return `CREATE TABLE IF NOT EXISTS ${this.qualify(t.name, t.schema)} (\n${defs.join(',\n')}\n);`;
+  }
+
+  private sqlLiteral(value: unknown): string {
+    if (value === null || value === undefined) return 'NULL';
+    if (typeof value === 'number') return String(value);
+    if (typeof value === 'boolean') return this.booleanLiteral(value);
+    if (value instanceof Date) return `'${value.toISOString()}'`;
+    const text =
+      typeof value === 'object' ? JSON.stringify(value) : String(value);
+    return `'${text.replace(/'/g, "''")}'`;
+  }
+
+  async restore(content: string, format: BackupFormat): Promise<RestoreResult> {
+    if (format === 'sql') {
+      const statements = splitSqlStatements(content);
+      let count = 0;
+      for (const stmt of statements) {
+        await this.runSql(stmt, []);
+        count++;
+      }
+      return { tables: 0, rows: count };
+    }
+
+    let doc: BackupDocument;
+    try {
+      doc = JSON.parse(content) as BackupDocument;
+    } catch {
+      throw new BadRequestError('Backup file is not valid JSON');
+    }
+    if (doc.relay !== 'backup' || !Array.isArray(doc.tables)) {
+      throw new BadRequestError('Not a Relay backup file');
+    }
+
+    let rows = 0;
+    for (const table of doc.tables) {
+      // Best-effort recreate; ignore "already exists".
+      await this.createTable({
+        schema: table.schema,
+        table: table.name,
+        columns: table.columns.map((name) => ({
+          name,
+          type: this.defaultRestoreType(),
+          nullable: true,
+          primaryKey: false,
+          autoIncrement: false,
+        })),
+      }).catch(() => undefined);
+
+      rows += await this.bulkInsert(
+        table.name,
+        table.schema,
+        table.columns,
+        table.rows,
+      );
+    }
+    return { tables: doc.tables.length, rows };
+  }
+
+  /** Column type used when recreating a table from a column-name-only dump. */
+  protected defaultRestoreType(): string {
+    return 'TEXT';
+  }
+
+  private async bulkInsert(
+    table: string,
+    schema: string | undefined,
+    columns: string[],
+    rows: Array<Record<string, unknown>>,
+  ): Promise<number> {
+    if (rows.length === 0 || columns.length === 0) return 0;
+    const target = this.qualify(table, schema);
+    const colSql = columns.map((c) => this.quoteIdent(c)).join(', ');
+    let inserted = 0;
+
+    for (let i = 0; i < rows.length; i += RESTORE_BATCH) {
+      const batch = rows.slice(i, i + RESTORE_BATCH);
+      const params: unknown[] = [];
+      let ph = 1;
+      const tuples = batch.map((row) => {
+        const placeholders = columns.map((c) => {
+          params.push(normalizeForInsert(row[c]));
+          return this.placeholder(ph++);
+        });
+        return `(${placeholders.join(', ')})`;
+      });
+      await this.runSql(
+        `INSERT INTO ${target} (${colSql}) VALUES ${tuples.join(', ')}`,
+        params,
+      );
+      inserted += batch.length;
+    }
+    return inserted;
+  }
+
   /**
    * Primary-key columns for a relation, used to build safe row identities.
    * Default implementation derives them from the schema introspection; engines
@@ -399,4 +590,62 @@ export abstract class BaseSqlAdapter implements DatabaseAdapter {
     }
     return [];
   }
+}
+
+/** Coerce a JSON-decoded value into something a driver can bind for INSERT. */
+function normalizeForInsert(value: unknown): unknown {
+  if (value !== null && typeof value === 'object' && !(value instanceof Date)) {
+    return JSON.stringify(value);
+  }
+  return value;
+}
+
+/**
+ * Split a `.sql` script into individual statements, respecting single-quoted
+ * strings (with `''` escapes) and `--` / block comments. Good enough for
+ * Relay-generated dumps and typical hand-written scripts.
+ */
+function splitSqlStatements(sql: string): string[] {
+  const out: string[] = [];
+  let cur = '';
+  let inSingle = false;
+  for (let i = 0; i < sql.length; i++) {
+    const ch = sql[i]!;
+    const next = sql[i + 1];
+    if (inSingle) {
+      cur += ch;
+      if (ch === "'") {
+        if (next === "'") {
+          cur += next;
+          i++;
+        } else {
+          inSingle = false;
+        }
+      }
+      continue;
+    }
+    if (ch === "'") {
+      inSingle = true;
+      cur += ch;
+      continue;
+    }
+    if (ch === '-' && next === '-') {
+      while (i < sql.length && sql[i] !== '\n') i++;
+      continue;
+    }
+    if (ch === '/' && next === '*') {
+      i += 2;
+      while (i < sql.length && !(sql[i] === '*' && sql[i + 1] === '/')) i++;
+      i++;
+      continue;
+    }
+    if (ch === ';') {
+      if (cur.trim()) out.push(cur.trim());
+      cur = '';
+      continue;
+    }
+    cur += ch;
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out;
 }

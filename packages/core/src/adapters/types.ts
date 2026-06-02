@@ -46,6 +46,8 @@ export interface AdapterCapabilities {
   ddl: boolean;
   /** Supports creating / dropping databases on this connection. */
   manageDatabases: boolean;
+  /** Backup/restore formats this engine can produce/consume. */
+  backupFormats: BackupFormat[];
 }
 
 /* -------------------------------------------------------------------------- */
@@ -269,6 +271,45 @@ export interface CreateTableSpec {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Backup & restore                                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `json` — portable, engine-agnostic dump (schema + data) that any engine can
+ * read back, with parameterized inserts on restore.
+ * `sql`  — a `.sql` script of DDL + INSERT statements (relational engines only).
+ */
+export type BackupFormat = 'json' | 'sql';
+
+export interface BackupOptions {
+  format: BackupFormat;
+  /** Restrict to these relations; defaults to every table in the database. */
+  tables?: string[];
+  schema?: string;
+}
+
+/** The portable JSON backup shape (also embedded inside `json` dumps). */
+export interface BackupDocument {
+  relay: 'backup';
+  version: 1;
+  engine: DatabaseEngine;
+  database: string;
+  createdAt: string;
+  tables: Array<{
+    name: string;
+    schema?: string;
+    primaryKey: string[];
+    columns: string[];
+    rows: Array<Record<string, unknown>>;
+  }>;
+}
+
+export interface RestoreResult {
+  tables: number;
+  rows: number;
+}
+
+/* -------------------------------------------------------------------------- */
 /* The adapter                                                                */
 /* -------------------------------------------------------------------------- */
 
@@ -303,4 +344,8 @@ export interface DatabaseAdapter {
   createTable(spec: CreateTableSpec): Promise<void>;
   dropTable(table: string, schema?: string): Promise<void>;
   truncateTable(table: string, schema?: string): Promise<void>;
+
+  /* backup & restore — guarded by `capabilities.backupFormats` */
+  backup(options: BackupOptions): Promise<string>;
+  restore(content: string, format: BackupFormat): Promise<RestoreResult>;
 }

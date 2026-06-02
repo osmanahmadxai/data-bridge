@@ -163,6 +163,25 @@ export const api = {
       `/connections/${id}/ddl/truncate-table${dbQuery(database)}`,
       { method: 'POST', ...jsonBody({ table, schema }) },
     ),
+
+  backup: (
+    id: string,
+    opts: { format: 'json' | 'sql'; tables?: string[]; schema?: string },
+    database?: string,
+  ) =>
+    request<{ filename: string; format: string; content: string }>(
+      `/connections/${id}/backup${dbQuery(database)}`,
+      { method: 'POST', ...jsonBody(opts) },
+    ),
+  restore: (
+    id: string,
+    body: { format: 'json' | 'sql'; content: string },
+    database?: string,
+  ) =>
+    request<{ tables: number; rows: number }>(
+      `/connections/${id}/restore${dbQuery(database)}`,
+      { method: 'POST', ...jsonBody(body) },
+    ),
 };
 
 function dbQuery(database?: string): string {

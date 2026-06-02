@@ -23,6 +23,7 @@ export const SQLITE_CAPABILITIES: AdapterCapabilities = {
   transactions: true,
   ddl: true,
   manageDatabases: false,
+  backupFormats: ['json', 'sql'],
 };
 
 export class SqliteAdapter extends BaseSqlAdapter {

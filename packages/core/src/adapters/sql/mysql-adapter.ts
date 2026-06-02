@@ -22,6 +22,7 @@ export const MYSQL_CAPABILITIES: AdapterCapabilities = {
   transactions: true,
   ddl: true,
   manageDatabases: true,
+  backupFormats: ['json', 'sql'],
 };
 
 export class MysqlAdapter extends BaseSqlAdapter {

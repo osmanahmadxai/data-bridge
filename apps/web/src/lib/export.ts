@@ -26,6 +26,12 @@ function download(filename: string, content: string, mime: string): void {
   URL.revokeObjectURL(url);
 }
 
+/** Trigger a browser download of arbitrary text (used by backups). */
+export function downloadText(filename: string, content: string): void {
+  const mime = filename.endsWith('.json') ? 'application/json' : 'text/plain';
+  download(filename, content, mime);
+}
+
 export function exportRows(
   columns: string[],
   rows: Array<Record<string, unknown>>,
