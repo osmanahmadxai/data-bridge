@@ -34,6 +34,7 @@ import {
 import { useStudio } from '@/lib/store';
 import { buildSelect } from '@/lib/sql';
 import { cn } from '@/lib/utils';
+import { useConfirm } from '@/components/confirm';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -86,6 +87,7 @@ export function SchemaTree() {
   const canManageDb = !!driver?.capabilities.manageDatabases;
   const backupFormats = driver?.capabilities.backupFormats ?? [];
   const fileRef = useRef<HTMLInputElement>(null);
+  const confirm = useConfirm();
 
   const { data: databases } = useDatabases(
     driver?.capabilities.multipleDatabases ? activeConnectionId : null,
@@ -116,12 +118,14 @@ export function SchemaTree() {
   }
 
   async function handleDrop(table: string, tableSchema?: string) {
-    if (
-      !window.confirm(
-        `Drop "${table}"? This permanently deletes the table and all its data.`,
-      )
-    )
-      return;
+    const ok = await confirm({
+      title: `Drop “${table}”?`,
+      description:
+        'This permanently deletes the table and all of its data. This cannot be undone.',
+      confirmText: 'Drop table',
+      destructive: true,
+    });
+    if (!ok) return;
     try {
       await api.dropTable(
         activeConnectionId as string,
@@ -160,12 +164,12 @@ export function SchemaTree() {
 
   async function handleRestoreFile(file: File) {
     const format: BackupFormat = file.name.endsWith('.sql') ? 'sql' : 'json';
-    if (
-      !window.confirm(
-        `Restore from "${file.name}"? This writes data into the current database.`,
-      )
-    )
-      return;
+    const ok = await confirm({
+      title: 'Restore from file?',
+      description: `“${file.name}” will be written into the current database. Existing rows may be overwritten.`,
+      confirmText: 'Restore',
+    });
+    if (!ok) return;
     try {
       const content = await file.text();
       const res = await api.restore(
@@ -188,12 +192,14 @@ export function SchemaTree() {
   }
 
   async function handleDropDatabase(name: string) {
-    if (
-      !window.confirm(
-        `Drop database “${name}”? This permanently deletes the database and ALL of its data.`,
-      )
-    )
-      return;
+    const ok = await confirm({
+      title: `Drop database “${name}”?`,
+      description:
+        'This permanently deletes the database and all of its data. This cannot be undone.',
+      confirmText: 'Drop database',
+      destructive: true,
+    });
+    if (!ok) return;
     try {
       await api.dropDatabase(activeConnectionId as string, name);
       setActiveDatabase(undefined);
@@ -212,8 +218,13 @@ export function SchemaTree() {
   }
 
   async function handleTruncate(table: string, tableSchema?: string) {
-    if (!window.confirm(`Truncate "${table}"? This deletes all of its rows.`))
-      return;
+    const ok = await confirm({
+      title: `Truncate “${table}”?`,
+      description: 'This deletes all rows in the table. This cannot be undone.',
+      confirmText: 'Truncate',
+      destructive: true,
+    });
+    if (!ok) return;
     try {
       await api.truncateTable(
         activeConnectionId as string,
