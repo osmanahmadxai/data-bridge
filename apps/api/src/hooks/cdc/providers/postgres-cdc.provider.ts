@@ -1,13 +1,13 @@
 /**
- * PostgreSQL CDC via **logical replication** — the same mechanism
- * Debezium/Fivetran use. Changes stream from the WAL in real time (no polling),
- * decoded with the built-in `pgoutput` plugin (no server extension needed). We
- * auto-provision the publication + replication slot; the one thing we can't
- * automate is `wal_level=logical` (it needs a server restart), so `readiness()`
- * checks it and tells the user exactly what to do.
+ * PostgreSQL CDC via logical replication, same mechanism Debezium/Fivetran use.
+ * changes stream from the WAL in real time (no polling), decoded with the
+ * built-in `pgoutput` plugin (no server extension needed). we auto-provision
+ * the publication + replication slot. the one thing we can't automate is
+ * `wal_level=logical` (it needs a server restart), so `readiness()` checks it
+ * and tells the user what to do.
  *
- * The slot persists the confirmed LSN, so a restart resumes exactly where it
- * left off. This is a verbatim extract of the original HookCdcService Postgres
+ * the slot persists the confirmed LSN, so a restart resumes exactly where it
+ * left off. this is a verbatim extract of the original HookCdcService Postgres
  * logic, now behind the {@link CdcProvider} interface.
  */
 import { Injectable, Logger } from '@nestjs/common';
@@ -17,7 +17,7 @@ import type {
   CdcReadinessDTO,
   ConnectionConfig,
   DatabaseEngine,
-} from '@relay/core';
+} from '@data-bridge/core';
 import { LogicalReplicationService, PgoutputPlugin } from 'pg-logical-replication';
 import { AdapterPoolService } from '../../../connections/adapter-pool.service';
 import type { ResolvedHook } from '../../hooks.types';
@@ -28,7 +28,7 @@ import type {
   CdcStreamHandle,
 } from '../cdc-provider';
 
-/** Compare Postgres LSNs ("H/L" hex). Returns true if `a` is strictly after `b`. */
+/** compare Postgres LSNs ("H/L" hex). true if `a` is strictly after `b` */
 function lsnAfter(a: string, b: string | null): boolean {
   if (!b) return true;
   try {
@@ -39,7 +39,7 @@ function lsnAfter(a: string, b: string | null): boolean {
     };
     return big(a) > big(b);
   } catch {
-    // Conservative: treat parse failure as "not after" to avoid duplicate delivery.
+    // be conservative: treat a parse failure as "not after" to avoid dupes
     return false;
   }
 }
@@ -101,10 +101,10 @@ export class PostgresCdcProvider implements CdcProvider {
   /* ----- provisioning ----- */
 
   private pubName(hookId: string): string {
-    return `relay_pub_${hookId.replace(/-/g, '')}`;
+    return `databridge_pub_${hookId.replace(/-/g, '')}`;
   }
   private slotName(hookId: string): string {
-    return `relay_slot_${hookId.replace(/-/g, '')}`;
+    return `databridge_slot_${hookId.replace(/-/g, '')}`;
   }
   private quoteIdent(id: string): string {
     return `"${id.replace(/"/g, '""')}"`;
@@ -119,9 +119,9 @@ export class PostgresCdcProvider implements CdcProvider {
     const target = `${this.quoteIdent(schema)}.${this.quoteIdent(src.table)}`;
 
     await this.pool.withAdapter(src.connectionId, src.database, async (a) => {
-      // Check if the publication exists and is for the correct table. If the
-      // user edited the hook to change the source table, we must update the
-      // publication — otherwise we'd silently stream the old table's changes.
+      // check the publication exists and points at the correct table. if the
+      // user edited the hook to change the source table we have to update the
+      // publication, otherwise we'd silently stream the old table's changes
       const pubInfo = await a.query(
         `select pub.pubname, cls.relname as tablename
          from pg_publication pub
@@ -176,7 +176,7 @@ export class PostgresCdcProvider implements CdcProvider {
 
     const service = new LogicalReplicationService(this.clientConfig(conn, src.database), {
       acknowledge: { auto: true, timeoutSeconds: 10 },
-      flowControl: { enabled: true }, // backpressure: await each delivery
+      flowControl: { enabled: true }, // backpressure, await each delivery
     });
 
     service.on(
@@ -208,7 +208,7 @@ export class PostgresCdcProvider implements CdcProvider {
       protoVersion: 1,
       publicationNames: [this.pubName(hookId)],
     });
-    // Resumes from the slot's confirmed LSN automatically.
+    // resumes from the slot's confirmed LSN automatically
     service.subscribe(plugin, this.slotName(hookId)).catch((err: Error) => {
       handlers.onError(new Error(`subscribe failed: ${err.message}`));
     });

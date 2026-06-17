@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { ColumnDefinition, DatabaseEngine } from '@relay/core';
+import type { ColumnDefinition, DatabaseEngine } from '@data-bridge/core';
 import { api, ApiError } from '@/lib/api';
 import {
   Dialog,
@@ -39,11 +39,11 @@ type DraftColumn = ColumnDefinition & { id: number };
 
 const IDENT = /^[A-Za-z_][A-Za-z0-9_$]*$/;
 
-// One template shared by header + rows so checkbox columns line up exactly.
+// one template shared by header + rows so checkbox columns line up exactly
 const GRID =
   'grid grid-cols-[minmax(0,1.3fr)_minmax(0,1.3fr)_2.4rem_2.4rem_2.4rem_2.4rem_minmax(0,1.4fr)_2rem] items-center gap-2';
 
-/** Common default expressions offered as suggestions per engine. */
+/** common default expressions offered as suggestions per engine */
 function defaultPresets(engine: DatabaseEngine): string[] {
   switch (engine) {
     case 'postgres':
@@ -89,8 +89,8 @@ export function CreateTableDialog({
   open,
   onOpenChange,
 }: Props) {
-  // Mongo (and other schemaless engines) expose no column types — a table is
-  // just a named collection.
+  // Mongo (and other schemaless engines) expose no column types, a table is
+  // just a named collection
   const schemaless = dataTypes.length === 0;
   const defaultType = dataTypes[0] ?? 'text';
   const presets = defaultPresets(engine);
@@ -129,7 +129,7 @@ export function CreateTableDialog({
         { name: '_id', type: 'objectId', nullable: false, primaryKey: true, autoIncrement: false },
       ];
     } else {
-      // Ignore fully-blank rows the user never filled in.
+      // ignore fully-blank rows the user never filled in
       const defined = columns.filter((c) => c.name.trim() !== '');
       if (defined.length === 0) {
         toast.error('Add at least one named column');

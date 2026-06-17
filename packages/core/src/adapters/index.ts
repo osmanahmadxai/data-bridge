@@ -1,7 +1,7 @@
 /**
- * Driver bootstrap. Importing this module registers every built-in engine.
- * Server code should import from here (not the individual adapter files) so the
- * registry is always populated.
+ * driver bootstrap. importing this module registers every built-in engine.
+ * server code should import from here (not the individual adapter files) so the
+ * registry is always populated
  */
 import {
   listDrivers as _listDrivers,
@@ -130,7 +130,7 @@ export function bootstrapDrivers(): void {
   });
 }
 
-// Bootstrap on first import.
+// bootstrap on first import
 bootstrapDrivers();
 
 export const listDrivers = _listDrivers;

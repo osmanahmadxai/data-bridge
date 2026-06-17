@@ -1,13 +1,13 @@
 /**
- * "Watch" hooks: live listeners that poll a table for new rows and deliver them
- * as they appear. Each watch hook drives a single long-lived "watch run" (status
- * `running`) plus a BullMQ **job scheduler** that fires a poll every
- * `pollIntervalMs`. Schedulers persist in Redis, so listening survives restarts;
+ * "watch" hooks: live listeners that poll a table for new rows and deliver them
+ * as they show up. each watch hook drives a single long-lived "watch run"
+ * (status `running`) plus a BullMQ job scheduler that fires a poll every
+ * `pollIntervalMs`. schedulers persist in Redis, so listening survives restarts;
  * `onModuleInit` re-registers any that should still be active.
  *
- * The change-detection itself is the pure engine in `@relay/core` (`watchQuery`
- * / `advanceCursor`); this service is the I/O around it — fetch a page, deliver
- * the new rows, persist the advanced cursor.
+ * the change-detection itself is the pure engine in `@data-bridge/core`
+ * (`watchQuery` / `advanceCursor`); this service is the I/O around it: fetch a
+ * page, deliver the new rows, persist the advanced cursor.
  */
 import { randomUUID } from 'node:crypto';
 import { InjectQueue } from '@nestjs/bullmq';
@@ -25,7 +25,7 @@ import {
   watchStrategySchema,
   type HookRun,
   type WatchCursor,
-} from '@relay/core';
+} from '@data-bridge/core';
 import { Queue } from 'bullmq';
 import { AdapterPoolService } from '../connections/adapter-pool.service';
 import { PrismaService } from '../common/prisma.service';
@@ -38,15 +38,15 @@ import { HOOK_WATCH_QUEUE, type HookWatchJob } from './hooks.types';
 @Injectable()
 export class HookWatchService implements OnModuleInit {
   private readonly logger = new Logger('HookWatch');
-  /** In-process guard: never poll the same hook concurrently (single worker). */
+  /** in-process guard: never poll the same hook concurrently (single worker) */
   private readonly polling = new Set<string>();
-  /** Adaptive cadence: empty-poll streak + currently-scheduled interval per hook. */
+  /** adaptive cadence: empty-poll streak + currently-scheduled interval per hook */
   private readonly emptyStreak = new Map<string, number>();
   private readonly scheduledEvery = new Map<string, number>();
 
-  /** Fastest cadence (ms) when rows are actively flowing. */
+  /** fastest cadence (ms) when rows are actively flowing */
   private static readonly FAST_MS = 1000;
-  /** Stay fast for this many empty polls after activity before backing off. */
+  /** stay fast for this many empty polls after activity before backing off */
   private static readonly COOLDOWN_POLLS = 4;
 
   constructor(
@@ -76,8 +76,8 @@ export class HookWatchService implements OnModuleInit {
     }
 
     await this.ensureQueueReady();
-    // One run per hook: resume the existing (paused) run in place, keeping its
-    // cursor, rather than spawning a new one each time.
+    // one run per hook: resume the existing (paused) run in place, keeping its
+    // cursor, rather than spawning a new one each time
     const latest = await this.prisma.hookRun.findFirst({
       where: { hookId },
       orderBy: { startedAt: 'desc' },
@@ -99,7 +99,7 @@ export class HookWatchService implements OnModuleInit {
               totalCount: null,
             },
           });
-    // Start responsive; adapt() eases off when the table goes quiet.
+    // start responsive, adapt() eases off when the table goes quiet
     const fast = Math.min(HookWatchService.FAST_MS, hook.trigger.pollIntervalMs);
     this.emptyStreak.set(hookId, 0);
     this.scheduledEvery.set(hookId, fast);
@@ -122,7 +122,7 @@ export class HookWatchService implements OnModuleInit {
   /* ----- the poll cycle (invoked by the processor) ----- */
 
   async poll(hookId: string): Promise<void> {
-    if (this.polling.has(hookId)) return; // skip overlapping fires
+    if (this.polling.has(hookId)) return; // skip an overlapping fire
     this.polling.add(hookId);
     try {
       await this.runPoll(hookId);
@@ -139,7 +139,7 @@ export class HookWatchService implements OnModuleInit {
       orderBy: { startedAt: 'desc' },
     });
     if (!run) {
-      // Nothing is listening (stopped/never started) — retire the scheduler.
+      // nothing is listening (stopped/never started), retire the scheduler
       await this.unschedule(hookId);
       return;
     }
@@ -222,9 +222,9 @@ export class HookWatchService implements OnModuleInit {
   }
 
   /**
-   * Adaptive cadence: poll fast while rows are flowing, then ease back to the
-   * configured (idle) interval after a short cooldown. This keeps a busy table
-   * near-real-time while a quiet one barely touches the database — all without
+   * adaptive cadence: poll fast while rows are flowing, then ease back to the
+   * configured (idle) interval after a short cooldown. keeps a busy table
+   * near-real-time while a quiet one barely touches the database, all without
    * any DB-side changes.
    */
   private async adapt(hookId: string, idleMs: number, hadRows: boolean): Promise<void> {
@@ -238,7 +238,7 @@ export class HookWatchService implements OnModuleInit {
     }
   }
 
-  /* ----- initial cursor (so `startFrom: now` ignores existing rows) ----- */
+  /* ----- initial cursor, so `startFrom: now` ignores existing rows ----- */
 
   private async initialCursor(hook: ResolvedHook): Promise<WatchCursor> {
     if (hook.trigger.kind !== 'watch' || hook.source.kind !== 'table') {
@@ -276,7 +276,7 @@ export class HookWatchService implements OnModuleInit {
       );
       const maxTs = top.rows[0]?.[strategy.column];
       if (maxTs == null) return emptyCursor(strategy);
-      // Remember every row already at the max timestamp so they aren't re-sent.
+      // remember every row already at the max timestamp so they aren't re-sent
       const at = await this.pool.withAdapter(cid, db, (a) =>
         a.browse({
           schema: src.schema,
@@ -294,7 +294,7 @@ export class HookWatchService implements OnModuleInit {
       };
     }
 
-    // snapshot: seed the seen-set with current primary keys (bounded).
+    // snapshot: seed the seen-set with current primary keys (bounded)
     const page = await this.pool.withAdapter(cid, db, (a) =>
       a.browse({
         schema: src.schema,

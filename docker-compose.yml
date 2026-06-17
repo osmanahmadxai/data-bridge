@@ -1,20 +1,41 @@
-# Local infrastructure for Relay's automation hooks.
+# Local infrastructure for Data Bridge.
 #
-#   docker compose up -d redis
+#   docker compose up -d           # start postgres + redis
 #
-# Redis backs the BullMQ queue that executes hook runs durably (jobs survive an
-# API restart and auto-resume). The database studio, hook CRUD and payload
-# preview do not need Redis — only *running* a hook does.
+# - postgres backs Data Bridge's OWN metadata store (saved connections, hooks, runs,
+#   deliveries) via Prisma — see apps/api/.env DATABASE_URL.
+# - redis backs the BullMQ queue that executes hook runs durably (jobs survive an
+#   API restart and auto-resume). The database studio, hook CRUD and payload
+#   preview do not need Redis — only *running* a hook does.
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: data-bridge-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: Admin_Osman
+      POSTGRES_DB: databridge
+    ports:
+      # Host 5433 avoids clashing with any local/other Postgres on 5432.
+      - '5433:5432'
+    volumes:
+      - data-bridge-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d databridge']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   redis:
     image: redis:7-alpine
-    container_name: relay-redis
+    container_name: data-bridge-redis
     restart: unless-stopped
     ports:
       - '6379:6379'
     command: ['redis-server', '--save', '60', '1', '--appendonly', 'yes']
     volumes:
-      - relay-redis-data:/data
+      - data-bridge-redis-data:/data
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
@@ -22,4 +43,5 @@ services:
       retries: 5
 
 volumes:
-  relay-redis-data:
+  data-bridge-postgres-data:
+  data-bridge-redis-data:

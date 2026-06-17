@@ -13,7 +13,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { KeyRound, Link2 } from 'lucide-react';
-import type { DatabaseSchema, TableSchema } from '@relay/core';
+import type { DatabaseSchema, TableSchema } from '@data-bridge/core';
 import { useSchema } from '@/lib/queries';
 import { useStudio } from '@/lib/store';
 

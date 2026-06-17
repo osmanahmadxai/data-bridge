@@ -1,7 +1,7 @@
 /**
- * MongoDB adapter. Collections map to "tables"; documents map to rows. Schema
- * is inferred by sampling documents (Mongo is schemaless). The query editor
- * speaks a small JSON dialect — see {@link MongodbAdapter.query}.
+ * MongoDB adapter. collections map to "tables", documents map to rows. schema
+ * is inferred by sampling documents (Mongo is schemaless). the query editor
+ * speaks a small JSON dialect, see {@link MongodbAdapter.query}
  */
 import { MongoClient, ObjectId, type Db } from 'mongodb';
 import type {
@@ -39,8 +39,8 @@ export const MONGODB_CAPABILITIES: AdapterCapabilities = {
   foreignKeys: false,
   rowEditing: true,
   transactions: false,
-  // Collections behave like tables (create/drop/empty); databases are created
-  // implicitly by adding a collection, so we don't expose explicit DB creation.
+  // collections behave like tables (create/drop/empty); databases get created
+  // implicitly when you add a collection, so we don't expose explicit DB creation
   ddl: true,
   manageDatabases: false,
   backupFormats: ['json'],
@@ -161,15 +161,15 @@ export class MongodbAdapter implements DatabaseAdapter {
 
     const hasFilters = Object.keys(filter).length > 0;
     const started = performance.now();
-    // Probe one extra doc to detect a next page without a full count.
+    // probe one extra doc to detect a next page without a full count
     const cursor = coll.find(filter).skip(params.offset).limit(limit + 1);
     if (Object.keys(sort).length > 0) cursor.sort(sort);
     const probed = await cursor.toArray();
     const hasMore = probed.length > limit;
     const docs = hasMore ? probed.slice(0, limit) : probed;
 
-    // estimatedDocumentCount is O(1) on the collection metadata; the exact
-    // countDocuments is only used when a filter is applied.
+    // estimatedDocumentCount is O(1) on the collection metadata; we only fall
+    // back to the exact countDocuments when a filter is applied
     const total = hasFilters
       ? await coll.countDocuments(filter).catch(() => null)
       : await coll.estimatedDocumentCount().catch(() => null);
@@ -189,7 +189,7 @@ export class MongodbAdapter implements DatabaseAdapter {
   }
 
   /**
-   * Executes a JSON command document:
+   * runs a JSON command document:
    *   { "collection": "users", "find": { "active": true },
    *     "sort": { "createdAt": -1 }, "limit": 20 }
    *   { "collection": "orders", "aggregate": [ { "$group": ... } ] }
@@ -305,7 +305,7 @@ export class MongodbAdapter implements DatabaseAdapter {
     }
 
     const doc: BackupDocument = {
-      relay: 'backup',
+      dataBridge: 'backup',
       version: 1,
       engine: this.engine,
       database: db.databaseName,
@@ -335,8 +335,8 @@ export class MongodbAdapter implements DatabaseAdapter {
     } catch {
       throw new BadRequestError('Backup file is not valid JSON');
     }
-    if (doc.relay !== 'backup' || !Array.isArray(doc.tables)) {
-      throw new BadRequestError('Not a Relay backup file');
+    if (doc.dataBridge !== 'backup' || !Array.isArray(doc.tables)) {
+      throw new BadRequestError('Not a Data Bridge backup file');
     }
     const db = await this.getDb();
     let rows = 0;

@@ -1,9 +1,9 @@
 /**
- * Hook-run lifecycle + queue glue. Owns every Prisma write to `hook_runs` /
+ * hook-run lifecycle + queue glue. owns every Prisma write to `hook_runs` /
  * `hook_deliveries` and the BullMQ enqueue/cancel paths, so the processor only
  * has to stream and deliver.
  *
- * Durability model: one BullMQ job per run (`jobId = runId`). A crashed run is
+ * durability model: one BullMQ job per run (`jobId = runId`). a crashed run is
  * recovered by BullMQ's stalled-job detection and resumed from `cursorOffset`;
  * on boot we also re-enqueue any non-terminal run so nothing is orphaned.
  */
@@ -19,7 +19,7 @@ import {
   type HookRun,
   type HookRunStatus,
   NotFoundError,
-} from '@relay/core';
+} from '@data-bridge/core';
 import { Queue } from 'bullmq';
 import type {
   HookDelivery as DeliveryRow,
@@ -58,10 +58,10 @@ export class HookRunService implements OnModuleInit {
   ) {}
 
   /**
-   * Re-send the failed deliveries of a run by re-POSTing their captured request
-   * bodies to the hook's CURRENT destination. Works for every hook type
-   * (replay / watch / cdc) — ideal after fixing a bad URL or a down endpoint.
-   * A delivery that succeeds flips from failed → success (counters adjust).
+   * re-send the failed deliveries of a run by re-POSTing their captured request
+   * bodies to the hook's CURRENT destination. works for every hook type
+   * (replay / watch / cdc), ideal after fixing a bad URL or a down endpoint.
+   * a delivery that succeeds flips from failed to success (counters adjust).
    */
   async resendFailed(hookId: string, runId: string): Promise<HookRun> {
     const run = await this.getRunRow(runId);
@@ -110,18 +110,18 @@ export class HookRunService implements OnModuleInit {
   /* ----- prepare (queue without sending) ----- */
 
   /**
-   * Create a "draft" run so the UI shows the planned deliveries as queued the
-   * moment a hook is created — before anything is sent. Replaces any prior
-   * draft for the hook. Best-effort total so the timeline can render cells.
+   * create a "draft" run so the UI shows the planned deliveries as queued the
+   * moment a hook is created, before anything is sent. replaces any prior draft
+   * for the hook. best-effort total so the timeline can render cells.
    */
   async prepare(
     hookId: string,
     opts: { onlyExisting?: boolean } = {},
   ): Promise<HookRun | null> {
     const hook = await this.store.get(hookId);
-    // Drafts model a finite replay; watch hooks are live listeners, not drafts.
+    // drafts model a finite replay; watch hooks are live listeners, not drafts
     if (hook.trigger.kind !== 'replay') return null;
-    // Don't clobber an in-flight run with a draft.
+    // don't clobber an in-flight run with a draft
     const active = await this.prisma.hookRun.findFirst({
       where: { hookId, status: { in: ACTIVE } },
     });
@@ -130,8 +130,8 @@ export class HookRunService implements OnModuleInit {
     const { count } = await this.prisma.hookRun.deleteMany({
       where: { hookId, status: 'draft' },
     });
-    // On update we only refresh a draft that already existed — never add a
-    // fresh draft to a hook that has already been run.
+    // on update we only refresh a draft that already existed, never add a fresh
+    // draft to a hook that has already been run
     if (opts.onlyExisting && count === 0) return null;
 
     const snapshotJson = await this.store.snapshotJson(hookId);
@@ -154,12 +154,12 @@ export class HookRunService implements OnModuleInit {
     hookId: string,
     opts: { resumeRunId?: string; runId?: string; retryFailedOf?: string } = {},
   ): Promise<HookRun> {
-    await this.store.get(hookId); // 404 if the hook is gone
+    await this.store.get(hookId); // 404s if the hook is gone
 
     if (opts.retryFailedOf) return this.retryFailed(hookId, opts.retryFailedOf);
     if (opts.resumeRunId) return this.resume(hookId, opts.resumeRunId);
 
-    // Starting a prepared draft, or the hook's existing draft if any.
+    // starting a prepared draft, or the hook's existing draft if any
     const draft = opts.runId
       ? await this.getRunRow(opts.runId)
       : await this.prisma.hookRun.findFirst({
@@ -184,8 +184,8 @@ export class HookRunService implements OnModuleInit {
       );
     }
 
-    // Resume the most recent paused/stopped run in place (one run per job)
-    // rather than spawning a new one each time. A finished run starts fresh.
+    // resume the most recent paused/stopped run in place (one run per job)
+    // rather than spawning a new one each time. a finished run starts fresh.
     const latest = await this.prisma.hookRun.findFirst({
       where: { hookId, status: { in: ['paused', 'canceled', 'interrupted', 'failed'] } },
       orderBy: { startedAt: 'desc' },
@@ -210,10 +210,10 @@ export class HookRunService implements OnModuleInit {
   }
 
   /**
-   * Re-send the rows that FAILED in this run, IN PLACE — the same run and the
+   * re-send the rows that FAILED in this run, IN PLACE. the same run and the
    * same delivery cells are reused, so failed (red) rows flip to delivered
-   * (green) on success. The config snapshot is refreshed to the hook's current
-   * config so a fixed URL/headers/auth take effect. Resetting the cursor makes
+   * (green) on success. the config snapshot is refreshed to the hook's current
+   * config so a fixed URL/headers/auth take effect. resetting the cursor makes
    * the worker re-stream and re-send only the not-yet-settled (failed) rows;
    * already-delivered/skipped rows are skipped untouched.
    */
@@ -245,7 +245,7 @@ export class HookRunService implements OnModuleInit {
     return this.toRun(updated);
   }
 
-  /** Best-effort planned row count for a source, used to render the timeline. */
+  /** best-effort planned row count for a source, used to render the timeline */
   private async computeTotal(snapshotJson: string): Promise<number | null> {
     const hook = this.store.resolveSnapshot(snapshotJson);
     if (hook.source.kind === 'table') {
@@ -283,8 +283,8 @@ export class HookRunService implements OnModuleInit {
       );
     }
     await this.ensureQueueReady();
-    // Resume the REMAINING rows with the hook's CURRENT config, so edits made
-    // after the run started (e.g. fewer columns, a new endpoint) take effect.
+    // resume the REMAINING rows with the hook's CURRENT config, so edits made
+    // after the run started (e.g. fewer columns, a new endpoint) take effect
     const reset = await this.prisma.hookRun.update({
       where: { id: runId },
       data: {
@@ -306,7 +306,7 @@ export class HookRunService implements OnModuleInit {
     );
   }
 
-  /** Fail fast with a friendly message when Redis is unreachable. */
+  /** fail fast with a friendly message when Redis is unreachable */
   private async ensureQueueReady(): Promise<void> {
     try {
       await Promise.race([
@@ -338,7 +338,7 @@ export class HookRunService implements OnModuleInit {
       data: { status: 'canceling' },
     });
     this.registry.abort(runId); // stop the in-flight fetch immediately
-    await this.queue.remove(runId).catch(() => {}); // best-effort; worker also self-stops
+    await this.queue.remove(runId).catch(() => {}); // best-effort, worker also self-stops
     return this.toRun(updated);
   }
 
@@ -364,7 +364,7 @@ export class HookRunService implements OnModuleInit {
     runId: string,
     opts: {
       status?: 'success' | 'failed' | 'skipped';
-      /** Inclusive sequence window — lets the UI page the timeline cheaply. */
+      /** inclusive sequence window, lets the UI page the timeline cheaply */
       from?: number;
       to?: number;
       offset?: number;
@@ -392,8 +392,8 @@ export class HookRunService implements OnModuleInit {
   }
 
   /**
-   * Mark sequences to skip. Best-effort: only effective while the sequence is
-   * still queued (the worker checks the skip set before sending). Creates a
+   * mark sequences to skip. best-effort: only effective while the sequence is
+   * still queued (the worker checks the skip set before sending). creates a
    * `skipped` delivery row for each sequence that has no delivery yet.
    */
   async skipDeliveries(runId: string, sequences: number[]): Promise<number> {
@@ -409,8 +409,8 @@ export class HookRunService implements OnModuleInit {
     const fresh = [...new Set(sequences)].filter((s) => !taken.has(s));
     if (fresh.length === 0) return 0;
 
-    // Compute the actual row count for each sequence. The last batch may be
-    // smaller than batchSize when totalCount is not perfectly divisible.
+    // work out the actual row count for each sequence. the last batch may be
+    // smaller than batchSize when totalCount isn't perfectly divisible
     const lastSeq =
       totalCount != null ? Math.ceil(totalCount / batchSize) - 1 : null;
     const lastBatchSize =
@@ -443,7 +443,7 @@ export class HookRunService implements OnModuleInit {
     return fresh.length;
   }
 
-  /** Sequences explicitly skipped — the worker must not send these. */
+  /** sequences explicitly skipped, the worker must not send these */
   async skippedSequences(runId: string): Promise<Set<number>> {
     const rows = await this.prisma.hookDelivery.findMany({
       where: { runId, status: 'skipped' },
@@ -472,9 +472,9 @@ export class HookRunService implements OnModuleInit {
   }
 
   /**
-   * Whether a stop was requested for this run — works across processes (any
-   * BullMQ worker can own the job, so checking the DB status is authoritative,
-   * not just the local abort signal).
+   * whether a stop was requested for this run. works across processes (any
+   * BullMQ worker can own the job, so the DB status is authoritative, not just
+   * the local abort signal).
    */
   async cancelRequested(runId: string): Promise<boolean> {
     const r = await this.prisma.hookRun.findUnique({
@@ -506,8 +506,8 @@ export class HookRunService implements OnModuleInit {
   }
 
   /**
-   * Sequences the worker must not (re)send: already delivered, or skipped.
-   * Used to make resume idempotent and to honor skips queued before the run.
+   * sequences the worker must not (re)send: already delivered, or skipped.
+   * makes resume idempotent and honors skips queued before the run.
    */
   async settledSequences(runId: string): Promise<Set<number>> {
     const rows = await this.prisma.hookDelivery.findMany({
@@ -517,7 +517,7 @@ export class HookRunService implements OnModuleInit {
     return new Set(rows.map((r) => r.sequence));
   }
 
-  /** Persist one delivery and advance the run's counters atomically. */
+  /** persist one delivery and advance the run's counters atomically */
   async recordDelivery(
     runId: string,
     meta: {
@@ -530,8 +530,8 @@ export class HookRunService implements OnModuleInit {
   ): Promise<void> {
     const rowKeysJson = meta.rowKeys ? JSON.stringify(meta.rowKeys) : null;
 
-    // A retry re-records an existing (failed) delivery, so adjust counters by
-    // the delta: remove the old status' contribution, add the new one. This is
+    // a retry re-records an existing (failed) delivery, so adjust counters by
+    // the delta: drop the old status' contribution, add the new one. this is
     // what flips a red cell green and keeps the stat cards correct.
     const existing = await this.prisma.hookDelivery.findUnique({
       where: { runId_sequence: { runId, sequence: meta.sequence } },
@@ -612,11 +612,11 @@ export class HookRunService implements OnModuleInit {
     }
     let recovered = 0;
     for (const r of rows) {
-      // Only replay runs belong to this queue. Watch/CDC runs are also `running`
-      // but are owned by their own services — never re-enqueue those here.
+      // only replay runs belong to this queue. watch/CDC runs are also `running`
+      // but are owned by their own services, never re-enqueue those here
       const hook = await this.store.get(r.hookId).catch(() => null);
       if (!hook || hook.trigger.kind !== 'replay') continue;
-      // Deterministic jobId means this is a no-op if the job already exists.
+      // deterministic jobId means this is a no-op if the job already exists
       await this.enqueue(r.id, r.hookId).catch((err) =>
         this.logger.warn(
           `Could not re-enqueue run ${r.id}: ${(err as Error).message}`,

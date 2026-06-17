@@ -1,9 +1,9 @@
 /**
- * Credential encryption at rest (AES-256-GCM).
+ * credential encryption at rest (AES-256-GCM).
  *
- * Key precedence: RELAY_MASTER_KEY (base64, 32 bytes) when set; otherwise a
+ * key precedence: DATABRIDGE_MASTER_KEY (base64, 32 bytes) when set, otherwise a
  * random key generated once and persisted to the data dir with 0600 perms.
- * Ciphertext format is "iv:tag:data", all base64.
+ * ciphertext format is "iv:tag:data", all base64
  */
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -24,7 +24,7 @@ export class CryptoService {
       const key = Buffer.from(runtimeConfig.masterKey, 'base64');
       if (key.length !== 32) {
         throw new Error(
-          'RELAY_MASTER_KEY must be a base64-encoded 32-byte value',
+          'DATABRIDGE_MASTER_KEY must be a base64-encoded 32-byte value',
         );
       }
       this.key = key;

@@ -18,10 +18,9 @@ import { HookBuilder } from '@/components/automations/hook-builder';
 import { DataSourcesManager } from '@/components/data-sources-manager';
 
 /**
- * The app is a hooks workspace. The sidebar lists hooks; the main panel shows
- * the selected hook's runs. Connecting to a database, browsing tables and DDL
- * live in the Data Sources surface and the Hook Builder — the data source
- * exists to feed hooks.
+ * the app is a hooks workspace. sidebar lists hooks, main panel shows the
+ * selected hook's runs. connecting, browsing tables and DDL live in the Data
+ * Sources surface and the Hook Builder. data sources exist to feed hooks.
  */
 export function Studio() {
   const {
@@ -33,8 +32,8 @@ export function Studio() {
     openHookEditor,
   } = useStudio();
 
-  // Restore UI state from the URL on load, and keep the URL in sync — so a
-  // refresh keeps you on the same hook / surface instead of bouncing to root.
+  // restore UI state from the URL on load and keep the URL in sync, so a
+  // refresh keeps you on the same hook/surface instead of bouncing to root
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
     const hook = p.get('hook');
@@ -57,13 +56,15 @@ export function Studio() {
   return (
     <>
       <ResizablePanelGroup direction="horizontal" className="h-screen">
-        {/* Sidebar — hooks only */}
+        {/* sidebar, hooks only */}
         <ResizablePanel defaultSize={22} minSize={16} maxSize={32}>
           <div className="flex h-full flex-col border-r">
             <div className="flex items-center justify-between px-3 py-2.5">
               <div className="flex items-center gap-2">
-                <Webhook className="text-primary h-5 w-5" />
-                <span className="font-semibold tracking-tight">Relay</span>
+                <span className="bg-primary/10 flex h-6 w-6 items-center justify-center rounded-md">
+                  <Webhook className="text-primary h-4 w-4" />
+                </span>
+                <span className="font-semibold tracking-tight">Data Bridge</span>
                 <span className="text-muted-foreground text-xs">Hooks</span>
               </div>
               <div className="flex items-center gap-0.5">
@@ -86,7 +87,7 @@ export function Studio() {
 
         <ResizableHandle />
 
-        {/* Main — the hooks workspace */}
+        {/* main, the hooks workspace */}
         <ResizablePanel defaultSize={78}>
           <AutomationsView />
         </ResizablePanel>

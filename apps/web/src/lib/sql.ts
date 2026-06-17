@@ -1,15 +1,15 @@
-import type { DatabaseEngine } from '@relay/core';
+import type { DatabaseEngine } from '@data-bridge/core';
 
-/** Quote an identifier for the given engine's dialect. */
+/** quote an identifier for the given engine's dialect */
 export function quoteIdent(engine: DatabaseEngine, id: string): string {
   if (engine === 'mysql') return `\`${id.replace(/`/g, '``')}\``;
   return `"${id.replace(/"/g, '""')}"`;
 }
 
 /**
- * Build a safe, dialect-quoted `SELECT *` for a relation — used by the
+ * build a safe, dialect-quoted `SELECT *` for a relation. backs the
  * "open in query editor" action so users don't have to remember quoting rules
- * (e.g. PostgreSQL folding unquoted `User` to `user`).
+ * (e.g. PostgreSQL folding unquoted `User` to `user`)
  */
 export function buildSelect(
   engine: DatabaseEngine,

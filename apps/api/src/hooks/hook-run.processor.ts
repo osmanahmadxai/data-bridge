@@ -1,17 +1,18 @@
 /**
- * BullMQ worker that executes a hook run. One job == one run (`jobId = runId`),
- * so the run's lifecycle is the job's lifecycle — no cross-job bookkeeping.
+ * BullMQ worker that executes a hook run. one job == one run (`jobId = runId`),
+ * so the run's lifecycle is the job's lifecycle, no cross-job bookkeeping.
  *
- * Streaming: rows are read a page at a time (table) or once (query) and grouped
- * into batches of `batchSize`. Each batch is one HTTP delivery. Only a single
- * page is ever held in memory, and deliveries are awaited sequentially, which
+ * streaming: rows are read a page at a time (table) or once (query) and grouped
+ * into batches of `batchSize`. each batch is one HTTP delivery. only a single
+ * page is ever held in memory and deliveries are awaited sequentially, which
  * gives natural backpressure and lets `minDelayMs` pace the send rate.
  *
- * Resumability: the run checkpoints `cursorOffset` at every batch boundary
+ * resumability: the run checkpoints `cursorOffset` at every batch boundary
  * (always batch-aligned), so a stalled-job recovery or explicit resume restarts
- * mid-stream. The `(runId, sequence)` unique row + a skip-set of already-succeeded
- * sequences make re-delivery idempotent. `sequence = floor(rowIndex / batchSize)`
- * is deterministic, so the numbering lines up across attempts.
+ * mid-stream. the `(runId, sequence)` unique row plus a skip-set of
+ * already-succeeded sequences make re-delivery idempotent.
+ * `sequence = floor(rowIndex / batchSize)` is deterministic, so the numbering
+ * lines up across attempts.
  */
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
@@ -21,7 +22,7 @@ import {
   renderRow,
   type BrowseParams,
   type SortSpec,
-} from '@relay/core';
+} from '@data-bridge/core';
 import type { Job } from 'bullmq';
 import { AdapterPoolService } from '../connections/adapter-pool.service';
 import { runtimeConfig } from '../common/runtime-config';
@@ -55,7 +56,7 @@ export class HookRunProcessor extends WorkerHost {
     const { runId } = job.data;
     const row = await this.runs.getRunRow(runId);
 
-    // Already settled by a previous attempt, or canceled before we started.
+    // already settled by a previous attempt, or canceled before we started
     if (['completed', 'failed', 'canceled', 'interrupted'].includes(row.status)) return;
     if (row.status === 'canceling') {
       await this.runs.finalize(runId, 'canceled');
@@ -81,16 +82,16 @@ export class HookRunProcessor extends WorkerHost {
     const { delivery } = hook;
     const batchSize = delivery.batchSize;
     const table = hook.source.kind === 'table' ? hook.source.table : '(query)';
-    // The single-column primary key (if any) is stored per delivery so failed
-    // rows can later be retried precisely.
+    // single-column primary key (if any) is stored per delivery so failed rows
+    // can later be retried precisely
     const pkColumn =
       hook.source.kind === 'table' ? await this.resolvePk(hook.source) : null;
-    // Sequences we must not (re)send: already delivered, or skipped.
+    // sequences we must not (re)send: already delivered, or skipped
     const done = await this.runs.settledSequences(runId);
 
-    // Control polling is throttled to keep DB load negligible on big runs. It
+    // control polling is throttled to keep DB load negligible on big runs. it
     // serves two cross-process signals: cancellation (any worker may own the
-    // job) and newly-queued skips (the UI can skip a row before we reach it).
+    // job) and newly-queued skips (the UI can skip a row before we reach it)
     let lastControlCheck = 0;
     const stopRequested = async (): Promise<boolean> => {
       if (signal.aborted) return true;
@@ -152,7 +153,7 @@ export class HookRunProcessor extends WorkerHost {
     }
   }
 
-  /** Render + deliver one batch; returns true if the run should abort. */
+  /** render + deliver one batch, returns true if the run should abort */
   private async flush(
     runId: string,
     table: string,
@@ -165,7 +166,7 @@ export class HookRunProcessor extends WorkerHost {
   ): Promise<boolean> {
     const batchSize = hook.delivery.batchSize;
     const sequence = Math.floor(startIndex / batchSize);
-    if (done.has(sequence)) return false; // already delivered on a prior attempt
+    if (done.has(sequence)) return false; // already delivered on an earlier attempt
 
     const now = new Date().toISOString();
     const { body } =
@@ -189,7 +190,7 @@ export class HookRunProcessor extends WorkerHost {
     return outcome.status === 'failed' && hook.delivery.onError === 'abort';
   }
 
-  /** The single-column primary key of a table source, if any. */
+  /** the single-column primary key of a table source, if any */
   private async resolvePk(
     source: Extract<ResolvedHook['source'], { kind: 'table' }>,
   ): Promise<string | null> {
@@ -224,13 +225,13 @@ export class HookRunProcessor extends WorkerHost {
     const browse = (params: BrowseParams) =>
       this.pool.withAdapter(src.connectionId, src.database, (a) => a.browse(params));
 
-    // Keyset pagination on a unique key — O(1) per page regardless of how deep
-    // we are, so a multi-million-row replay stays fast (no OFFSET re-scan).
+    // keyset pagination on a unique key, O(1) per page no matter how deep we
+    // are, so a multi-million-row replay stays fast (no OFFSET re-scan)
     if (keysetColumn) {
       let lastKey: unknown = null;
       let index = startOffset;
       if (startOffset > 0) {
-        // Resume: find the key of the last already-delivered row (one seek).
+        // resume: find the key of the last already-delivered row (one seek)
         const seek = await browse({
           schema: src.schema,
           table: src.table,
@@ -265,7 +266,7 @@ export class HookRunProcessor extends WorkerHost {
       }
     }
 
-    // Fallback: OFFSET pagination (composite key or custom non-unique sort).
+    // fallback: OFFSET pagination (composite key or custom non-unique sort)
     let offset = startOffset;
     for (;;) {
       const page = await browse({
@@ -285,8 +286,8 @@ export class HookRunProcessor extends WorkerHost {
   }
 
   /**
-   * A stable order is mandatory: `LIMIT/OFFSET` without `ORDER BY` can skip or
-   * repeat rows across pages. Use the caller's sort, else the primary key, and
+   * a stable order is mandatory: `LIMIT/OFFSET` without `ORDER BY` can skip or
+   * repeat rows across pages. use the caller's sort, else the primary key, and
    * report whether we can keyset-paginate (single, uniquely-ordered key).
    */
   private async resolveTableOrder(
@@ -300,7 +301,7 @@ export class HookRunProcessor extends WorkerHost {
     const singlePk = probe.primaryKey.length === 1 ? probe.primaryKey[0]! : null;
 
     if (src.sort && src.sort.length > 0) {
-      // Keyset only if the caller's order is exactly the (unique) primary key asc.
+      // keyset only if the caller's order is exactly the (unique) primary key asc
       const s = src.sort;
       const keyset =
         s.length === 1 && s[0]!.column === singlePk && s[0]!.direction === 'asc'

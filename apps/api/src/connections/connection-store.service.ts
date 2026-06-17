@@ -1,7 +1,7 @@
 /**
- * Persistent store for saved connections, backed by Prisma (SQLite).
- * Secrets (password, connection string) are encrypted at rest; callers get a
- * redacted view unless they explicitly resolve the full config.
+ * persistent store for saved connections, backed by Prisma (SQLite).
+ * secrets (password, connection string) are encrypted at rest. callers get a
+ * redacted view unless they explicitly resolve the full config
  */
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
@@ -10,7 +10,7 @@ import {
   type ConnectionConfig,
   type ConnectionInput,
   NotFoundError,
-} from '@relay/core';
+} from '@data-bridge/core';
 import { CryptoService } from '../common/crypto.service';
 import { PrismaService } from '../common/prisma.service';
 
@@ -71,7 +71,7 @@ export class ConnectionStoreService {
     return this.toConfig(await this.getRow(id), false);
   }
 
-  /** Full config including decrypted secrets — server-internal use only. */
+  /** full config including decrypted secrets, server-internal use only */
   async resolve(id: string): Promise<ConnectionConfig> {
     return this.toConfig(await this.getRow(id), true);
   }
@@ -101,7 +101,7 @@ export class ConnectionStoreService {
   async update(id: string, input: ConnectionInput): Promise<ConnectionConfig> {
     const existing = await this.getRow(id);
 
-    // Preserve stored secrets when the client sends the redaction sentinel.
+    // keep stored secrets when the client sends the redaction sentinel
     const passwordEnc =
       input.password === REDACTED
         ? existing.passwordEnc
@@ -135,7 +135,7 @@ export class ConnectionStoreService {
   }
 
   async remove(id: string): Promise<void> {
-    await this.getRow(id); // 404 if missing
+    await this.getRow(id); // 404s if missing
     await this.prisma.connection.delete({ where: { id } });
   }
 }

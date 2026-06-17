@@ -34,7 +34,7 @@ import { SqliteCdcProvider } from './cdc/providers/sqlite-cdc.provider';
     RunRegistryService,
     HookRunProcessor,
     HookWatchProcessor,
-    // CDC providers (one per engine) + the aggregate the orchestrator injects.
+    // CDC providers (one per engine) plus the aggregate the orchestrator injects
     PostgresCdcProvider,
     MysqlCdcProvider,
     MongodbCdcProvider,

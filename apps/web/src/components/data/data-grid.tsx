@@ -20,7 +20,7 @@ import type {
   FilterOperator,
   FilterSpec,
   SortSpec,
-} from '@relay/core';
+} from '@data-bridge/core';
 import { api, ApiError } from '@/lib/api';
 import { exportRows } from '@/lib/export';
 import { useBrowse, useConnections, useDrivers } from '@/lib/queries';
@@ -204,7 +204,7 @@ export function DataGrid() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Toolbar */}
+      {/* toolbar */}
       <div className="flex items-center gap-2 border-b px-3 py-2">
         <span className="font-mono text-sm font-medium">{selected.table}</span>
         <Badge variant="secondary" className="font-normal">
@@ -283,7 +283,7 @@ export function DataGrid() {
         </div>
       </div>
 
-      {/* Grid */}
+      {/* grid */}
       <div className="min-h-0 flex-1 overflow-auto scrollbar-thin">
         {error ? (
           <div className="p-4 text-sm text-destructive">
@@ -401,7 +401,7 @@ export function DataGrid() {
         )}
       </div>
 
-      {/* Pagination */}
+      {/* pagination */}
       <div className="flex items-center gap-3 border-t px-3 py-1.5 text-xs">
         <span className="text-muted-foreground">Rows per page</span>
         <Select
@@ -465,7 +465,7 @@ export function DataGrid() {
   );
 }
 
-/* ---- filter popover ---- */
+/* filter popover */
 
 function FilterPopover({
   columns,

@@ -1,16 +1,16 @@
 /**
- * Event-based ("CDC") hooks — engine-agnostic orchestrator.
+ * event-based ("CDC") hooks, engine-agnostic orchestrator.
  *
- * Each engine captures changes differently (Postgres logical replication, MySQL
+ * each engine captures changes differently (Postgres logical replication, MySQL
  * binlog, MongoDB change streams, Redis keyspace notifications); that variation
- * lives behind the {@link CdcProvider} interface. This service is the shared
+ * lives behind the {@link CdcProvider} interface. this service is the shared
  * machinery around them: pick the provider for a connection's engine, manage the
- * run lifecycle (one resumable run per hook), and implement the per-change
- * pipeline — dedupe replays → render → deliver → record → persist the cursor.
+ * run lifecycle (one resumable run per hook), and run the per-change pipeline
+ * (dedupe replays, render, deliver, record, persist the cursor).
  *
- * A held streaming connection per active hook lives in `streams`. Durable engines
- * (pg/mysql/mongo) persist a cursor so a restart resumes exactly; Redis is
- * real-time only (see {@link RedisCdcProvider}).
+ * a held streaming connection per active hook lives in `streams`. durable
+ * engines (pg/mysql/mongo) persist a cursor so a restart resumes exactly; Redis
+ * is real-time only (see {@link RedisCdcProvider}).
  */
 import {
   Inject,
@@ -29,7 +29,7 @@ import {
   type ConnectionConfig,
   type DatabaseEngine,
   type HookRun,
-} from '@relay/core';
+} from '@data-bridge/core';
 import { randomUUID } from 'node:crypto';
 import { ConnectionStoreService } from '../connections/connection-store.service';
 import { PrismaService } from '../common/prisma.service';
@@ -44,17 +44,17 @@ import {
   type CdcStreamHandle,
 } from './cdc/cdc-provider';
 
-/** Live runtime state for one active CDC stream. */
+/** live runtime state for one active CDC stream */
 interface Stream {
   handle: CdcStreamHandle;
   provider: CdcProvider;
   runId: string;
   seq: number;
-  /** Highest cursor already processed — guards against replay dupes on reconnect. */
+  /** highest cursor already processed, guards against replay dupes on reconnect */
   watermark: string | null;
 }
 
-/** Read the persisted resume cursor from a run's cursorJson (legacy `lsn` ok). */
+/** read the persisted resume cursor from a run's cursorJson (legacy `lsn` ok) */
 function readCursor(cursorJson: string | null): string | null {
   if (!cursorJson) return null;
   try {
@@ -86,7 +86,7 @@ export class HookCdcService implements OnModuleInit, OnModuleDestroy {
     return this.providers.get(engine) ?? null;
   }
 
-  /* ----- readiness (drives the builder's setup panel) ----- */
+  /* ----- readiness, drives the builder's setup panel ----- */
 
   async readiness(dto: CdcReadinessDTO): Promise<CdcReadiness> {
     const conn = await this.connStore.resolve(dto.connectionId);
@@ -145,8 +145,8 @@ export class HookCdcService implements OnModuleInit, OnModuleDestroy {
 
     await provider.provision(hookId, hook, conn);
 
-    // One run per hook: resume the existing (paused) run in place rather than
-    // spawning a new one. Durable engines keep their cursor, so it continues cleanly.
+    // one run per hook: resume the existing (paused) run in place rather than
+    // spawning a new one. durable engines keep their cursor so it continues cleanly
     const latest = await this.prisma.hookRun.findFirst({
       where: { hookId },
       orderBy: { startedAt: 'desc' },
@@ -172,7 +172,7 @@ export class HookCdcService implements OnModuleInit, OnModuleDestroy {
     return this.runs.getRun(hookId, run.id);
   }
 
-  /** Pause: stop the live stream but keep durable state so a resume continues. */
+  /** pause: stop the live stream but keep durable state so a resume continues */
   async stop(hookId: string): Promise<HookRun | null> {
     await this.teardown(hookId);
     const run = await this.prisma.hookRun.findFirst({
@@ -184,7 +184,7 @@ export class HookCdcService implements OnModuleInit, OnModuleDestroy {
     return this.runs.getRun(hookId, run.id);
   }
 
-  /** Full teardown when a hook is deleted: stop stream and drop provider state. */
+  /** full teardown when a hook is deleted: stop stream and drop provider state */
   async cleanup(hookId: string): Promise<void> {
     await this.teardown(hookId);
     try {
@@ -194,11 +194,11 @@ export class HookCdcService implements OnModuleInit, OnModuleDestroy {
       const provider = this.providerFor(conn.engine);
       await provider?.deprovision(hookId, hook, conn).catch(() => undefined);
     } catch {
-      /* hook/connection already gone — nothing to deprovision */
+      /* hook/connection already gone, nothing to deprovision */
     }
   }
 
-  /** Close every streaming connection on shutdown — no zombie streamers. */
+  /** close every streaming connection on shutdown, no zombie streamers */
   async onModuleDestroy(): Promise<void> {
     for (const hookId of [...this.streams.keys()]) {
       await this.teardown(hookId);
@@ -236,11 +236,11 @@ export class HookCdcService implements OnModuleInit, OnModuleDestroy {
         onError: (err) => this.logger.warn(`CDC stream error for ${hookId}: ${err.message}`),
       },
     });
-    // The provider may have already begun emitting; only replace the placeholder.
+    // the provider may have already begun emitting, only replace the placeholder
     stream.handle = handle;
   }
 
-  /** Dedupe → render → deliver → record → persist cursor, for one change. */
+  /** for one change: dedupe, render, deliver, record, persist cursor */
   private async handleChange(
     hookId: string,
     hook: ResolvedHook,
@@ -248,20 +248,20 @@ export class HookCdcService implements OnModuleInit, OnModuleDestroy {
   ): Promise<void> {
     const stream = this.streams.get(hookId);
     if (!stream || hook.source.kind !== 'table') return;
-    // Strict exactly-once: never re-process a position we've already done
-    // (durable engines replay from the last acked cursor after a reconnect).
+    // strict exactly-once: never re-process a position we've already done
+    // (durable engines replay from the last acked cursor after a reconnect)
     if (!stream.provider.cursorAfter(change.cursor, stream.watermark)) return;
 
     const seq = stream.seq;
     const now = new Date().toISOString();
-    // Expose the change operation to the template as {{$op}}.
+    // expose the change operation to the template as {{$op}}
     const { body } = renderRow({ ...change.row, $op: change.op as CdcOperation }, hook.transform, {
       table: hook.source.table,
       now,
       index: seq,
     });
-    // Key on the cursor (stable per change) so an at-least-once re-delivery after
-    // a reconnect carries the SAME Idempotency-Key for the receiver to dedupe.
+    // key on the cursor (stable per change) so an at-least-once re-delivery after
+    // a reconnect carries the SAME Idempotency-Key for the receiver to dedupe
     const idem = hook.destination.idempotency ? `${stream.runId}:${change.cursor}` : undefined;
     const signal = new AbortController().signal;
     const outcome = await this.delivery.send(body, hook.destination, hook.delivery, signal, idem);

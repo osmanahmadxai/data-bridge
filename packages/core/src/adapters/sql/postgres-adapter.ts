@@ -1,4 +1,4 @@
-/** PostgreSQL adapter backed by `pg` with a per-connection pool. */
+/** PostgreSQL adapter backed by `pg` with a per-connection pool */
 import { Pool, type PoolConfig, type QueryResult as PgResult } from 'pg';
 import type {
   AdapterCapabilities,
@@ -130,16 +130,16 @@ export class PostgresAdapter extends BaseSqlAdapter {
     schema?: string;
     hasFilters: boolean;
   }): Promise<{ total: number | null; estimated: boolean }> {
-    // Exact COUNT(*) on a large filtered view is expensive; skip it.
+    // exact COUNT(*) on a large filtered view is expensive, skip it
     if (args.hasFilters) return { total: null, estimated: false };
-    // Use the planner's row estimate — instant, no table scan.
+    // use the planner's row estimate, instant, no table scan
     const target = this.qualify(args.table, args.schema);
     const res = await this.runSql(
       `SELECT reltuples::bigint AS count FROM pg_class WHERE oid = $1::regclass`,
       [target],
     ).catch(() => null);
     const n = res?.rows[0] ? Number(res.rows[0].count) : null;
-    // reltuples is -1 (PG14+) / 0 for never-analyzed tables — report unknown.
+    // reltuples is -1 (PG14+) / 0 for never-analyzed tables, report unknown
     if (n == null || n < 1) return { total: null, estimated: false };
     return { total: n, estimated: true };
   }
@@ -158,7 +158,7 @@ export class PostgresAdapter extends BaseSqlAdapter {
       this.config.database ??
       (await this.runSql('SELECT current_database() AS db', [])).rows[0]?.db;
 
-    // Columns across all user schemas in one pass.
+    // columns across all user schemas in one pass
     const cols = await this.runSql(
       `SELECT c.table_schema, c.table_name, c.column_name, c.data_type,
               c.is_nullable, c.column_default, c.ordinal_position

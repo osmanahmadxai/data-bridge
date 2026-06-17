@@ -6,7 +6,7 @@ import { useTheme } from 'next-themes';
 import { Loader2, Play, Plus, Sparkles, X } from 'lucide-react';
 import { format } from 'sql-formatter';
 import { toast } from 'sonner';
-import type { QueryLanguage, QueryResult } from '@relay/core';
+import type { QueryLanguage, QueryResult } from '@data-bridge/core';
 import { api, ApiError } from '@/lib/api';
 import { useConnections, useDrivers, useSchema } from '@/lib/queries';
 import { useStudio } from '@/lib/store';
@@ -65,7 +65,7 @@ export function QueryEditor() {
   const [runningId, setRunningId] = useState<string | null>(null);
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
 
-  // Seed a starter snippet only when the active tab is empty.
+  // seed a starter snippet only when the active tab is empty
   useEffect(() => {
     if (!activeTab.sql.trim()) updateQueryTabSql(activeTab.id, STARTER[lang]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -127,7 +127,7 @@ export function QueryEditor() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Tab bar */}
+      {/* tab bar */}
       <div className="flex items-center gap-0.5 overflow-x-auto border-b px-1 scrollbar-thin">
         {queryTabs.map((t) => (
           <div
@@ -164,7 +164,7 @@ export function QueryEditor() {
         </Button>
       </div>
 
-      {/* Toolbar */}
+      {/* toolbar */}
       <div className="flex items-center gap-2 border-b px-3 py-1.5">
         <Button size="sm" onClick={() => run()} disabled={running}>
           {running ? (
@@ -216,7 +216,7 @@ export function QueryEditor() {
   );
 }
 
-/** Registers schema-aware SQL autocompletion (tables + columns + keywords). */
+/** registers schema-aware SQL autocompletion (tables + columns + keywords) */
 let sqlCompletionRegistered = false;
 function registerSqlCompletion(
   monaco: Monaco,

@@ -1,4 +1,4 @@
-/** Shared Zod schemas for connection payloads (used on client and server). */
+/** shared Zod schemas for connection payloads (used on client and server) */
 import { z } from 'zod';
 
 export const engineSchema = z.enum([

@@ -25,7 +25,7 @@ import {
   renderRow,
   skipSchema,
   startRunSchema,
-} from '@relay/core';
+} from '@data-bridge/core';
 import { AdapterPoolService } from '../connections/adapter-pool.service';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { DeliveryService } from './delivery.service';
@@ -57,7 +57,7 @@ export class HooksController {
     @Body(new ZodValidationPipe(hookInputSchema)) dto: HookInputDTO,
   ): Promise<Hook> {
     const hook = await this.store.create(dto);
-    // Queue a draft run so the timeline shows the planned deliveries right away.
+    // queue a draft run so the timeline shows the planned deliveries right away
     await this.runs.prepare(hook.id).catch(() => undefined);
     return hook;
   }
@@ -73,14 +73,14 @@ export class HooksController {
     @Body(new ZodValidationPipe(hookInputSchema)) dto: HookInputDTO,
   ): Promise<Hook> {
     const hook = await this.store.update(id, dto);
-    // Refresh an existing draft so its queued timeline reflects the new config.
+    // refresh an existing draft so its queued timeline reflects the new config
     await this.runs.prepare(id, { onlyExisting: true }).catch(() => undefined);
     return hook;
   }
 
   @Delete(':id')
   async remove(@Param('id') id: string): Promise<{ id: string }> {
-    // Tear down any live listener BEFORE deleting (CDC drops its slot/publication).
+    // tear down any live listener BEFORE deleting (CDC drops its slot/publication)
     const hook = await this.store.get(id).catch(() => null);
     if (hook?.trigger.kind === 'cdc') await this.cdc.cleanup(id).catch(() => undefined);
     else if (hook?.trigger.kind === 'watch') await this.watch.stop(id).catch(() => undefined);

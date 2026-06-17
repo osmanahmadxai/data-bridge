@@ -1,13 +1,14 @@
 /**
- * MySQL CDC via the **binary log** (row-based replication), read with
- * `@powersync/mysql-zongji`. Relay registers as a replication client and decodes
- * Write/Update/Delete row events in real time. Durable and resumable: the cursor
- * is the binlog `"file:position"`, so a restart resumes exactly where it left off.
+ * MySQL CDC via the binary log (row-based replication), read with
+ * `@powersync/mysql-zongji`. Data Bridge registers as a replication client and
+ * decodes Write/Update/Delete row events in real time. durable and resumable:
+ * the cursor is the binlog `"file:position"`, so a restart resumes exactly
+ * where it left off.
  *
- * Prerequisites (checked by readiness): `log_bin=ON`, `binlog_format=ROW`,
+ * prereqs (checked by readiness): `log_bin=ON`, `binlog_format=ROW`,
  * `binlog_row_image=FULL`, and a user with `REPLICATION SLAVE` + `REPLICATION
- * CLIENT`. On managed MySQL these usually require a parameter-group change + a
- * reboot and an explicit GRANT — readiness spells out exactly what's missing.
+ * CLIENT`. on managed MySQL these usually need a parameter-group change plus a
+ * reboot and an explicit GRANT. readiness spells out what's missing.
  */
 import { Injectable, Logger } from '@nestjs/common';
 import { ZongJi, type BinLogEvent } from '@powersync/mysql-zongji';
@@ -17,7 +18,7 @@ import type {
   CdcReadinessDTO,
   ConnectionConfig,
   DatabaseEngine,
-} from '@relay/core';
+} from '@data-bridge/core';
 import { AdapterPoolService } from '../../../connections/adapter-pool.service';
 import type { ResolvedHook } from '../../hooks.types';
 import {
@@ -34,7 +35,7 @@ interface ZongjiConn {
   password: string;
 }
 
-/** Row events we care about; `rotate`/`tablemap` are needed for bookkeeping. */
+/** row events we care about. `rotate`/`tablemap` are needed for bookkeeping */
 const ROW_EVENTS = new Set(['writerows', 'updaterows', 'deleterows']);
 
 @Injectable()
@@ -44,7 +45,7 @@ export class MysqlCdcProvider implements CdcProvider {
 
   constructor(private readonly pool: AdapterPoolService) {}
 
-  /** Compare "file:pos" cursors: filename first, then numeric position. */
+  /** compare "file:pos" cursors: filename first, then numeric position */
   cursorAfter(a: string, b: string | null): boolean {
     if (!b) return true;
     const [fa, pa] = this.splitCursor(a);
@@ -59,7 +60,7 @@ export class MysqlCdcProvider implements CdcProvider {
     return [c.slice(0, idx), Number(c.slice(idx + 1)) || 0];
   }
 
-  /* ----- connection details (zongji needs discrete fields) ----- */
+  /* ----- connection details, zongji needs discrete fields ----- */
 
   private zongjiConn(conn: ConnectionConfig): ZongjiConn {
     if (conn.host) {
@@ -82,11 +83,11 @@ export class MysqlCdcProvider implements CdcProvider {
     throw new Error('MySQL connection is missing host/credentials.');
   }
 
-  /** A stable, non-zero replication server id derived from the hook id. */
+  /** a stable, non-zero replication server id derived from the hook id */
   private serverId(hookId: string): number {
     let h = 0;
     for (let i = 0; i < hookId.length; i++) h = (h * 31 + hookId.charCodeAt(i)) >>> 0;
-    // Keep well clear of the common server_id=1 and inside a safe 32-bit range.
+    // keep well clear of the common server_id=1 and inside a safe 32-bit range
     return (h % 2_000_000_000) + 1000;
   }
 
@@ -153,7 +154,7 @@ export class MysqlCdcProvider implements CdcProvider {
     }
   }
 
-  /* ----- provisioning: nothing to do (the binlog already exists) ----- */
+  /* ----- provisioning: nothing to do, the binlog already exists ----- */
 
   async provision(): Promise<void> {
     /* no-op */
@@ -179,13 +180,13 @@ export class MysqlCdcProvider implements CdcProvider {
     let stopped = false;
     let zongji: ZongJi | null = null;
     let attempt = 0;
-    // Resume bookkeeping (durable across reconnects and restarts).
+    // resume bookkeeping, durable across reconnects and restarts
     let [binlogName, position] = fromCursor ? this.splitCursor(fromCursor) : ['', 0];
 
     const onEvent = async (evt: BinLogEvent): Promise<void> => {
       const name = evt.getEventName();
       if (name === 'rotate') {
-        // Rotate tells us the current binlog filename (incl. the one at startup).
+        // rotate tells us the current binlog filename (incl. the one at startup)
         binlogName = (evt as { binlogName?: string }).binlogName ?? binlogName;
         return;
       }
@@ -204,7 +205,7 @@ export class MysqlCdcProvider implements CdcProvider {
         name === 'writerows' ? 'insert' : name === 'deleterows' ? 'delete' : 'update';
       if (!ops.has(op)) return;
 
-      // Backpressure: pause the binlog socket while we deliver this batch.
+      // backpressure: pause the binlog socket while we deliver this batch
       if (zongji && !stopped) zongji.pause();
       try {
         const cursor = `${binlogName}:${rowEvt.nextPosition}`;
@@ -249,7 +250,7 @@ export class MysqlCdcProvider implements CdcProvider {
       if (binlogName && position > 0) {
         startOpts.filename = binlogName;
         startOpts.position = position;
-        // After the first resume we follow nextPosition live; clear the seed.
+        // after the first resume we follow nextPosition live, clear the seed
         position = 0;
       } else {
         startOpts.startAtEnd = true;

@@ -1,17 +1,17 @@
 /**
- * Redis CDC via **keyspace notifications** (pub/sub on `__keyevent@<db>__:*`).
+ * Redis CDC via keyspace notifications (pub/sub on `__keyevent@<db>__:*`).
  *
- * IMPORTANT — this is real-time but NON-DURABLE by nature:
- *  - Keyspace notifications are fire-and-forget pub/sub with no backlog. Any
- *    event published while Relay is disconnected (restart, network blip) is
- *    permanently lost — there is no resume cursor.
- *  - The event carries only the KEY, not the value; we do a best-effort
- *    follow-up read to populate the row (the key may already be gone for deletes).
- *  - Redis can't distinguish create vs overwrite, so all writes map to `update`.
+ * IMPORTANT, this is real-time but NON-DURABLE by nature:
+ *  - keyspace notifications are fire-and-forget pub/sub with no backlog. any
+ *    event published while Data Bridge is disconnected (restart, network blip)
+ *    is gone for good, there's no resume cursor.
+ *  - the event carries only the KEY, not the value, so we do a best-effort
+ *    follow-up read to fill the row (the key may already be gone for deletes).
+ *  - Redis can't tell create from overwrite, so all writes map to `update`.
  *
- * These limitations are surfaced in the readiness instructions so the user knows
- * exactly what they're getting. For durable Redis change capture, polling
- * (watch) is actually the more reliable choice.
+ * these limits are surfaced in the readiness instructions so the user knows
+ * what they're getting. for durable Redis change capture, polling (watch) is
+ * actually the more reliable choice.
  */
 import { Injectable, Logger } from '@nestjs/common';
 import Redis from 'ioredis';
@@ -21,7 +21,7 @@ import type {
   CdcReadinessDTO,
   ConnectionConfig,
   DatabaseEngine,
-} from '@relay/core';
+} from '@data-bridge/core';
 import type { ResolvedHook } from '../../hooks.types';
 import type {
   CdcChange,
@@ -30,7 +30,7 @@ import type {
   CdcStreamHandle,
 } from '../cdc-provider';
 
-/** Events that mean the key is gone. Everything else is treated as a write. */
+/** events that mean the key is gone. everything else is treated as a write */
 const DELETE_EVENTS = new Set(['del', 'unlink', 'expired', 'evicted', 'expire']);
 
 @Injectable()
@@ -38,7 +38,7 @@ export class RedisCdcProvider implements CdcProvider {
   readonly engine: DatabaseEngine = 'redis';
   private readonly logger = new Logger('HookCdc:redis');
 
-  // No durable position — every delivered event is "new".
+  // no durable position, every delivered event is "new"
   cursorAfter(): boolean {
     return true;
   }
@@ -75,8 +75,8 @@ export class RedisCdcProvider implements CdcProvider {
       await client.connect();
       const res = (await client.config('GET', 'notify-keyspace-events')) as string[];
       const flags = res?.[1] ?? '';
-      // We subscribe to keyevent channels, so we need 'E' plus event classes
-      // ('A' = all classes, or the specific generic/string/etc. flags).
+      // we subscribe to keyevent channels, so we need 'E' plus event classes
+      // ('A' = all classes, or the specific generic/string/etc flags)
       const hasEvent = flags.includes('E');
       const hasClasses = flags.includes('A') || /[g$lshzxet]/.test(flags);
       const ok = hasEvent && hasClasses;
@@ -87,11 +87,11 @@ export class RedisCdcProvider implements CdcProvider {
       });
       if (!ok) {
         instructions.push(
-          'Enable keyspace notifications:  CONFIG SET notify-keyspace-events EA  (or set `notify-keyspace-events EA` in redis.conf). Relay will attempt this automatically on start; managed Redis may require enabling it in the provider console.',
+          'Enable keyspace notifications:  CONFIG SET notify-keyspace-events EA  (or set `notify-keyspace-events EA` in redis.conf). Data Bridge will attempt this automatically on start; managed Redis may require enabling it in the provider console.',
         );
       }
       instructions.push(
-        'Note: Redis change capture is real-time only. Events that occur while Relay is offline cannot be recovered, and the changed value is fetched after the fact (best-effort).',
+        'Note: Redis change capture is real-time only. Events that occur while Data Bridge is offline cannot be recovered, and the changed value is fetched after the fact (best-effort).',
       );
       return { engine: 'redis', supported: true, ready: ok, checks, instructions };
     } catch (err) {
@@ -116,7 +116,7 @@ export class RedisCdcProvider implements CdcProvider {
       const res = (await client.config('GET', 'notify-keyspace-events')) as string[];
       const flags = res?.[1] ?? '';
       if (!(flags.includes('E') && (flags.includes('A') || /[g$lshzxet]/.test(flags)))) {
-        // Try to turn it on ourselves; harmless if it's already adequate.
+        // try to turn it on ourselves, harmless if it's already adequate
         await client.config('SET', 'notify-keyspace-events', 'EA').catch((err: Error) => {
           this.logger.warn(`Could not auto-enable keyspace notifications: ${err.message}`);
         });
@@ -129,7 +129,7 @@ export class RedisCdcProvider implements CdcProvider {
   }
 
   async deprovision(): Promise<void> {
-    /* no-op: we don't disable notifications (other consumers may rely on them) */
+    /* no-op: we don't disable notifications, other consumers may rely on them */
   }
 
   /* ----- the stream ----- */
@@ -143,7 +143,7 @@ export class RedisCdcProvider implements CdcProvider {
     const wantsWrite = ops.has('update') || ops.has('insert');
     const wantsDelete = ops.has('delete');
     const db = this.dbIndex(conn);
-    // Optional key glob filter (e.g. "user:*"); falls back to all keys.
+    // optional key glob filter (e.g. "user:*"), falls back to all keys
     const keyGlob = this.keyPattern(hook);
 
     const sub = this.newClient(conn); // subscriber connection (no normal commands)
@@ -164,7 +164,7 @@ export class RedisCdcProvider implements CdcProvider {
       const op: CdcOperation = isDelete ? 'delete' : 'update';
       const cursor = `${Date.now()}:${seq++}`; // synthetic, non-durable
 
-      // Resolve value out-of-band; never block the subscriber socket on it.
+      // resolve value out-of-band, never block the subscriber socket on it
       void this.buildRow(reader, key, event, isDelete)
         .then((row) => handlers.onChange({ op, row, cursor }))
         .catch((err) => handlers.onError(err as Error));
@@ -180,7 +180,7 @@ export class RedisCdcProvider implements CdcProvider {
     };
   }
 
-  /** Best-effort read of the current value for a changed key. */
+  /** best-effort read of the current value for a changed key */
   private async buildRow(
     reader: Redis,
     key: string,
@@ -188,7 +188,7 @@ export class RedisCdcProvider implements CdcProvider {
     isDelete: boolean,
   ): Promise<Record<string, unknown>> {
     const base = { key, event };
-    if (isDelete) return base; // value is gone
+    if (isDelete) return base; // value's gone
     try {
       const type = await reader.type(key);
       switch (type) {
@@ -203,14 +203,14 @@ export class RedisCdcProvider implements CdcProvider {
         case 'zset':
           return { ...base, type, value: await reader.zrange(key, 0, -1, 'WITHSCORES') };
         default:
-          return { ...base, type }; // 'none' (already gone) or unsupported
+          return { ...base, type }; // 'none' (already gone) or unsupported type
       }
     } catch {
-      return base; // key vanished between event and read
+      return base; // key vanished between the event and the read
     }
   }
 
-  /** Pull an optional key glob from the hook source filters, if present. */
+  /** pull an optional key glob from the hook source filters, if present */
   private keyPattern(hook: ResolvedHook): string | null {
     if (hook.source.kind !== 'table') return null;
     const filters = (hook.source as { filters?: { column: string; value: unknown }[] }).filters;
@@ -218,7 +218,7 @@ export class RedisCdcProvider implements CdcProvider {
     return keyFilter && typeof keyFilter.value === 'string' ? keyFilter.value : null;
   }
 
-  /** Minimal Redis-style glob match (`*` and `?`). */
+  /** minimal Redis-style glob match (`*` and `?`) */
   private globMatch(glob: string, value: string): boolean {
     const re = new RegExp(
       '^' +

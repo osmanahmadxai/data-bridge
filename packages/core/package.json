@@ -1,5 +1,5 @@
 {
-  "name": "@relay/core",
+  "name": "@data-bridge/core",
   "version": "0.1.0",
   "private": true,
   "description": "Framework-agnostic database domain: adapters, types, validation.",

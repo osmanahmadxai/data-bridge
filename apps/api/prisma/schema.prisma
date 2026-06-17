@@ -1,15 +1,15 @@
-// Prisma schema for Relay's OWN metadata store (saved connections).
+// Prisma schema for Data Bridge's OWN metadata store (saved connections, hooks, runs).
 //
-// NOTE: This models only the application's internal SQLite file. The databases
+// NOTE: This models only the application's internal database. The databases
 // users connect TO are accessed through the raw driver adapters in
-// @relay/core — an ORM cannot introspect arbitrary, unknown schemas.
+// @data-bridge/core — an ORM cannot introspect arbitrary, unknown schemas.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 

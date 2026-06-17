@@ -3,7 +3,7 @@ import { AdapterPoolService } from './adapter-pool.service';
 import { ConnectionStoreService } from './connection-store.service';
 import { ConnectionsController } from './connections.controller';
 
-// PrismaService + CryptoService come from the global CommonModule.
+// PrismaService + CryptoService come from the global CommonModule
 @Module({
   controllers: [ConnectionsController],
   providers: [ConnectionStoreService, AdapterPoolService],

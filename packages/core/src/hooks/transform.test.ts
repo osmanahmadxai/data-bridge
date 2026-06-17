@@ -27,7 +27,7 @@ describe('renderRow', () => {
       },
       ctx,
     );
-    // Whole-token strings adopt the real JS type, not a string.
+    // whole-token strings adopt the real JS type, not a string
     expect(body).toEqual({ id: 42, active: true, meta: { a: 1 }, nada: null });
   });
 

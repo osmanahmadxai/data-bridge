@@ -2,8 +2,8 @@ import { BadRequestException, type PipeTransform } from '@nestjs/common';
 import type { ZodSchema } from 'zod';
 
 /**
- * Validates and narrows a request payload with a Zod schema, reusing the same
- * schemas shared with the web client (`@relay/core`). Usage:
+ * validates and narrows a request payload with a Zod schema, reusing the same
+ * schemas shared with the web client (`@data-bridge/core`). usage:
  *   `@Body(new ZodValidationPipe(schema)) body: Dto`
  */
 export class ZodValidationPipe<T> implements PipeTransform<unknown, T> {

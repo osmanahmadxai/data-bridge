@@ -8,8 +8,8 @@ import { runtimeConfig } from './common/runtime-config';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, {
-    // Quiet the verbose route-mapping / bootstrap logs so the combined
-    // `pnpm dev` output stays readable. Errors and warnings still show.
+    // quiet the verbose route-mapping/bootstrap logs so the combined
+    // `pnpm dev` output stays readable. errors and warnings still show
     logger: ['error', 'warn'],
   });
 
@@ -20,7 +20,7 @@ async function bootstrap(): Promise<void> {
   app.enableShutdownHooks();
 
   await app.listen(runtimeConfig.port);
-  // Use console.log so this single line always prints regardless of log level.
+  // console.log so this single line always prints regardless of log level
   console.log(`\n API ready  →  http://localhost:${runtimeConfig.port}/api\n`);
 }
 

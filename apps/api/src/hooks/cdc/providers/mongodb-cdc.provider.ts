@@ -1,12 +1,12 @@
 /**
- * MongoDB CDC via **change streams** (`collection.watch()`), built on the oplog.
- * Real-time, durable, and resumable via a resume token — as long as the token
- * still falls inside the oplog window. Requires the server to be a replica set
- * (a single-node replica set works for dev) or a sharded cluster; change streams
- * are unavailable on a standalone mongod.
+ * MongoDB CDC via change streams (`collection.watch()`), built on the oplog.
+ * real-time, durable, resumable via a resume token, as long as the token still
+ * falls inside the oplog window. needs the server to be a replica set (a
+ * single-node replica set works for dev) or a sharded cluster. change streams
+ * aren't available on a standalone mongod.
  *
- * Resume token (`change._id`) is serialized into the cursor. On a long pause the
- * oplog can roll past the token (`ChangeStreamHistoryLost`); we catch that,
+ * resume token (`change._id`) gets serialized into the cursor. on a long pause
+ * the oplog can roll past the token (`ChangeStreamHistoryLost`); we catch that,
  * warn, and restart from "now" rather than crash-looping.
  */
 import { Injectable, Logger } from '@nestjs/common';
@@ -22,11 +22,11 @@ import type {
   CdcReadinessDTO,
   ConnectionConfig,
   DatabaseEngine,
-} from '@relay/core';
+} from '@data-bridge/core';
 import type { ResolvedHook } from '../../hooks.types';
 import { backoffMs, delay, type CdcChange, type CdcProvider, type CdcStreamContext, type CdcStreamHandle } from '../cdc-provider';
 
-/** Translate enabled CDC ops into the change-stream operationTypes to match. */
+/** map enabled CDC ops to the change-stream operationTypes to match */
 function operationTypes(ops: Set<CdcOperation>): string[] {
   const out: string[] = [];
   if (ops.has('insert')) out.push('insert');
@@ -40,7 +40,7 @@ export class MongodbCdcProvider implements CdcProvider {
   readonly engine: DatabaseEngine = 'mongodb';
   private readonly logger = new Logger('HookCdc:mongo');
 
-  // Resume tokens are exact; the driver replays from the token with no overlap.
+  // resume tokens are exact, the driver replays from the token with no overlap
   cursorAfter(): boolean {
     return true;
   }
@@ -102,7 +102,7 @@ export class MongodbCdcProvider implements CdcProvider {
     }
   }
 
-  /* ----- provisioning: nothing to do (the oplog already exists) ----- */
+  /* ----- provisioning: nothing to do, the oplog already exists ----- */
 
   async provision(): Promise<void> {
     /* no-op */
@@ -142,7 +142,7 @@ export class MongodbCdcProvider implements CdcProvider {
           if (resumeToken) options.startAfter = resumeToken;
           const stream = collection.watch(pipeline, options);
           current = stream;
-          attempt = 0; // a successful open resets backoff
+          attempt = 0; // successful open resets backoff
 
           for await (const change of stream as AsyncIterable<ChangeStreamDocument>) {
             if (stopped) break;
@@ -150,7 +150,7 @@ export class MongodbCdcProvider implements CdcProvider {
             if (mapped) await handlers.onChange(mapped);
             resumeToken = (change as { _id?: unknown })._id ?? resumeToken;
           }
-          // Iterator ended without error (e.g. closed by stop()).
+          // iterator ended without error (e.g. closed by stop())
           if (stopped) break;
         } catch (err) {
           if (stopped) break;
@@ -163,7 +163,7 @@ export class MongodbCdcProvider implements CdcProvider {
                 'Resume token is older than the MongoDB oplog window — restarting from now. Changes during the gap were not captured.',
               ),
             );
-            resumeToken = null; // restart from "now"
+            resumeToken = null; // start over from "now"
             continue;
           }
           handlers.onError(e);
@@ -172,7 +172,7 @@ export class MongodbCdcProvider implements CdcProvider {
       }
     };
 
-    // Drive the loop in the background; it owns its own lifecycle.
+    // drive the loop in the background, it owns its own lifecycle
     void loop().catch((err) => handlers.onError(err as Error));
 
     return {
@@ -184,7 +184,7 @@ export class MongodbCdcProvider implements CdcProvider {
     };
   }
 
-  /** Map a change-stream event into the normalized shape, or null to skip. */
+  /** map a change-stream event into the normalized shape, or null to skip */
   private mapChange(change: ChangeStreamDocument): CdcChange | null {
     const cursor = this.serializeToken((change as { _id?: unknown })._id);
     switch (change.operationType) {
@@ -192,10 +192,10 @@ export class MongodbCdcProvider implements CdcProvider {
       case 'update':
       case 'replace': {
         const full = (change as { fullDocument?: Record<string, unknown> }).fullDocument;
-        // On update, the doc may have been deleted before updateLookup ran.
+        // on update the doc may have been deleted before updateLookup ran
         const row =
           full ?? ((change as { documentKey?: Record<string, unknown> }).documentKey ?? {});
-        // replace behaves like an overwrite → report it as an update.
+        // replace behaves like an overwrite, so report it as an update
         const op: CdcOperation = change.operationType === 'insert' ? 'insert' : 'update';
         return { op, row, cursor };
       }
@@ -204,7 +204,7 @@ export class MongodbCdcProvider implements CdcProvider {
         return { op: 'delete', row: key, cursor };
       }
       default:
-        return null; // drop, rename, invalidate, etc.
+        return null; // drop, rename, invalidate, etc
     }
   }
 

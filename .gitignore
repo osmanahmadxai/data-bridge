@@ -14,6 +14,7 @@ next-env.d.ts
 .env*.local
 
 # local application data — metadata store + encryption key (never commit)
+.data-bridge/
 .relay/
 apps/api/prisma/*.db
 apps/api/prisma/*.db-journal

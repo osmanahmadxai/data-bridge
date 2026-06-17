@@ -1,54 +1,54 @@
 /**
- * Payload templating for automation hooks. Pure and framework-agnostic so it
- * runs identically in the API runner and in the web preview — and is trivially
+ * payload templating for automation hooks. pure and framework-agnostic so it
+ * runs identically in the API runner and the web preview, and is trivially
  * unit-testable.
  *
- * A template is a **JSON document** with `{{token}}` placeholders. We parse it
- * to a JSON tree exactly once and substitute tokens at the node level:
+ * a template is a JSON document with `{{token}}` placeholders. we parse it to a
+ * JSON tree once and substitute tokens at the node level:
  *
- *   - A string node that is *entirely* one token (`"{{email}}"`) is replaced by
- *     the token's real value, preserving its type (number, object, null, …).
- *   - A string node containing tokens among other text (`"id-{{id}}"`) has each
- *     token stringified and interpolated, staying a string.
+ *   - a string node that is entirely one token (`"{{email}}"`) is replaced by
+ *     the token's real value, keeping its type (number, object, null, …)
+ *   - a string node with tokens mixed into other text (`"id-{{id}}"`) has each
+ *     token stringified and interpolated, staying a string
  *
- * Because substitution happens on the parsed tree (never by splicing raw values
- * into template text and re-parsing), a value containing quotes or newlines can
- * never break out of its position or produce invalid JSON. This is the key
- * difference from naive string interpolation, which is an injection bug.
+ * since substitution happens on the parsed tree (never by splicing raw values
+ * into template text and re-parsing), a value with quotes or newlines can't
+ * break out of its position or produce invalid JSON. that's the key difference
+ * from naive string interpolation, which is an injection bug.
  *
- * Tokens:
- *   {{column}}  — a column value from the source row (original, pre-rename)
- *   {{$row}}    — the projected row object (after `fields` filter + `rename`)
- *   {{$table}}  — the source table/relation name
- *   {{$now}}    — ISO timestamp captured once per delivery
- *   {{$index}}  — 0-based row index across the whole run
+ * tokens:
+ *   {{column}}  a column value from the source row (original, pre-rename)
+ *   {{$row}}    the projected row object (after `fields` filter + `rename`)
+ *   {{$table}}  the source table/relation name
+ *   {{$now}}    ISO timestamp captured once per delivery
+ *   {{$index}}  0-based row index across the whole run
  */
 import { BadRequestError } from '../errors';
 
 export interface TransformContext {
-  /** Resolves `{{$table}}`. */
+  /** resolves `{{$table}}` */
   table: string;
-  /** Resolves `{{$now}}` — captured once per delivery. */
+  /** resolves `{{$now}}`, captured once per delivery */
   now: string;
-  /** Resolves `{{$index}}` — 0-based row index across the run. */
+  /** resolves `{{$index}}`, 0-based row index across the run */
   index: number;
 }
 
 export interface TransformConfig {
-  /** JSON template with `{{token}}` placeholders. */
+  /** JSON template with `{{token}}` placeholders */
   template: string;
-  /** Whitelist of source columns kept in `{{$row}}` (default: all). */
+  /** whitelist of source columns kept in `{{$row}}` (default: all) */
   fields?: string[];
-  /** Map of source column → output key, applied to `{{$row}}`. */
+  /** map of source column → output key, applied to `{{$row}}` */
   rename?: Record<string, string>;
-  /** When set, the final body is wrapped as `{ [wrapKey]: body }`. */
+  /** when set, the final body is wrapped as `{ [wrapKey]: body }` */
   wrapKey?: string;
 }
 
 export interface RenderResult {
-  /** The request body value (the caller is responsible for JSON.stringify). */
+  /** the request body value (caller is responsible for JSON.stringify) */
   body: unknown;
-  /** Tokens that did not resolve — surfaced for preview, never fatal. */
+  /** tokens that didn't resolve, surfaced for preview, never fatal */
   warnings: string[];
 }
 
@@ -57,7 +57,7 @@ type Row = Record<string, unknown>;
 const WHOLE_TOKEN = /^\{\{\s*([\w$]+)\s*\}\}$/;
 const ANY_TOKEN = /\{\{\s*([\w$]+)\s*\}\}/g;
 
-/** Apply the `fields` whitelist and `rename` map to produce `{{$row}}`. */
+/** apply the `fields` whitelist and `rename` map to produce `{{$row}}` */
 function projectRow(row: Row, cfg: TransformConfig): Row {
   let entries = Object.entries(row);
   if (cfg.fields && cfg.fields.length > 0) {
@@ -80,7 +80,7 @@ function buildScope(row: Row, cfg: TransformConfig, ctx: TransformContext): Row 
   };
 }
 
-/** Coerce a resolved value to its string form for in-string interpolation. */
+/** coerce a resolved value to its string form for in-string interpolation */
 function stringify(value: unknown): string {
   if (value === null || value === undefined) return '';
   if (typeof value === 'string') return value;
@@ -88,7 +88,7 @@ function stringify(value: unknown): string {
   return String(value);
 }
 
-/** Recursively substitute tokens in a parsed JSON node. */
+/** recursively substitute tokens in a parsed JSON node */
 function substitute(node: unknown, scope: Row, warnings: Set<string>): unknown {
   if (typeof node === 'string') {
     const whole = node.match(WHOLE_TOKEN);
@@ -110,7 +110,7 @@ function substitute(node: unknown, scope: Row, warnings: Set<string>): unknown {
   if (node && typeof node === 'object') {
     const out: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(node)) {
-      // Keys are interpolated (string-only); values are fully substituted.
+      // keys are interpolated (string-only), values are fully substituted
       const renderedKey = key.replace(ANY_TOKEN, (_m, name: string) => {
         if (name in scope) return stringify(scope[name]);
         warnings.add(name);
@@ -124,9 +124,9 @@ function substitute(node: unknown, scope: Row, warnings: Set<string>): unknown {
 }
 
 /**
- * Parse a template once, surfacing a clear error on malformed JSON. A template
+ * parse a template once, surfacing a clear error on malformed JSON. a template
  * that is a single bare token (e.g. the default `{{$row}}`) is returned as that
- * token string so `substitute` resolves it to a typed value — it need not be
+ * token string so `substitute` resolves it to a typed value, it need not be
  * quoted JSON.
  */
 function parseTemplate(template: string): unknown {
@@ -141,7 +141,7 @@ function parseTemplate(template: string): unknown {
   }
 }
 
-/** Render a single row to a request body. */
+/** render a single row to a request body */
 export function renderRow(
   row: Row,
   cfg: TransformConfig,
@@ -154,8 +154,8 @@ export function renderRow(
 }
 
 /**
- * Render N rows into a single array body (used when `batchSize > 1`). Each row
- * is rendered with its own `{{$index}}`; the optional `wrapKey` wraps the array.
+ * render N rows into a single array body (used when `batchSize > 1`). each row
+ * gets its own `{{$index}}`, the optional `wrapKey` wraps the array.
  */
 export function renderBatch(
   rows: Row[],

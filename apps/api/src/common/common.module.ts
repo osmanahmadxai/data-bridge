@@ -3,9 +3,9 @@ import { CryptoService } from './crypto.service';
 import { PrismaService } from './prisma.service';
 
 /**
- * Shared singletons (Prisma client + credential crypto). Marked `@Global` so any
- * feature module can inject them without re-listing them as providers — which
- * would otherwise create a second `CryptoService` that reloads the master key.
+ * shared singletons (Prisma client + credential crypto). marked `@Global` so any
+ * feature module can inject them without re-listing them as providers, which
+ * would otherwise create a second `CryptoService` that reloads the master key
  */
 @Global()
 @Module({

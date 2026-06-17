@@ -11,7 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { DeliveryStatus, HookDelivery } from '@relay/core';
+import type { DeliveryStatus, HookDelivery } from '@data-bridge/core';
 import { ApiError } from '@/lib/api';
 import { useHookDeliveries, useSkipDeliveries } from '@/lib/queries';
 import { cn } from '@/lib/utils';
@@ -25,7 +25,7 @@ import {
 
 const CELLS_PER_PAGE = 600;
 
-/** Visual state of a timeline cell. */
+/** visual state of a timeline cell */
 type CellState = DeliveryStatus | 'queued';
 
 const CELL_STYLES: Record<CellState, string> = {
@@ -79,7 +79,7 @@ export function DeliveryMonitor({
   const [rangeFrom, setRangeFrom]   = useState('');
   const [rangeTo, setRangeTo]       = useState('');
 
-  // Reset all local state when switching to a different run.
+  // reset all local state when switching to a different run
   useEffect(() => {
     setPage(0);
     setManualPage(false);
@@ -88,8 +88,8 @@ export function DeliveryMonitor({
     setSelectMode(false);
   }, [runId]);
 
-  // Auto-follow: while live and the user hasn't manually navigated,
-  // keep the view on the latest page as new deliveries arrive.
+  // auto-follow: while live and the user hasn't manually navigated,
+  // keep the view on the latest page as new deliveries arrive
   const prevPageCountRef = useRef(pageCount);
   useEffect(() => {
     if (live && !manualPage && pageCount > prevPageCountRef.current) {
@@ -202,10 +202,10 @@ export function DeliveryMonitor({
     <div className="flex h-full min-h-0">
       <div className="flex min-w-0 flex-1 flex-col">
 
-        {/* ── Toolbar ─────────────────────────────────────────────────── */}
+        {/* ── toolbar ─────────────────────────────────────────────────── */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b px-3 py-2">
 
-          {/* Legend */}
+          {/* legend */}
           <div className="flex items-center gap-3">
             {LEGEND.map((l) => (
               <span key={l.state} className="text-muted-foreground flex items-center gap-1.5 text-[11px]">
@@ -215,7 +215,7 @@ export function DeliveryMonitor({
             ))}
           </div>
 
-          {/* Live badge + refresh indicator */}
+          {/* live badge + refresh indicator */}
           <div className="flex items-center gap-2">
             {live && (
               <span className="flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400">
@@ -231,7 +231,7 @@ export function DeliveryMonitor({
             )}
           </div>
 
-          {/* Auto-follow notice (shown only when user manually navigated away during live) */}
+          {/* auto-follow notice (shown only when user manually navigated away during live) */}
           {live && manualPage && (
             <button
               className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-[11px] underline underline-offset-2 transition-colors"
@@ -242,7 +242,7 @@ export function DeliveryMonitor({
           )}
 
           <div className="ml-auto flex items-center gap-2">
-            {/* Range skip */}
+            {/* range skip */}
             <Popover>
               <PopoverTrigger asChild>
                 <Button size="sm" variant="outline" className="h-7">
@@ -329,7 +329,7 @@ export function DeliveryMonitor({
           </div>
         </div>
 
-        {/* ── Timeline grid ───────────────────────────────────────────── */}
+        {/* ── timeline grid ───────────────────────────────────────────── */}
         <div className="min-h-0 flex-1 overflow-y-auto">
           {sequences.length === 0 ? (
             <div className="text-muted-foreground flex flex-col items-center justify-center gap-2 py-12">
@@ -385,7 +385,7 @@ export function DeliveryMonitor({
           )}
         </div>
 
-        {/* ── Pagination ──────────────────────────────────────────────── */}
+        {/* ── pagination ──────────────────────────────────────────────── */}
         {cellCount != null && pageCount > 1 && (
           <div className="text-muted-foreground flex items-center gap-2 border-t px-3 py-1.5 text-xs">
             <span>
@@ -420,7 +420,7 @@ export function DeliveryMonitor({
         )}
       </div>
 
-      {/* ── Delivery detail panel ───────────────────────────────────── */}
+      {/* ── delivery detail panel ───────────────────────────────────── */}
       {openDelivery && (
         <div className="bg-muted/20 w-[44%] min-w-[320px] border-l">
           <DeliveryDetail
@@ -462,7 +462,7 @@ function DeliveryDetail({
   return (
     <div className="h-full overflow-y-auto">
       <div className="space-y-3 p-3 text-xs">
-        {/* Header row */}
+        {/* header row */}
         <div className="flex items-center gap-2">
           <span className={cn('rounded-full px-2 py-0.5 font-semibold capitalize', tone)}>
             {d.status}
@@ -482,7 +482,7 @@ function DeliveryDetail({
           </div>
         </div>
 
-        {/* Meta row */}
+        {/* meta row */}
         <div className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1">
           <span>
             seq <span className="text-foreground font-mono">#{d.sequence}</span>
