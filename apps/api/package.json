@@ -1,8 +1,8 @@
 {
-  "name": "@relay/api",
+  "name": "@data-bridge/api",
   "version": "0.1.0",
   "private": true,
-  "description": "Relay backend — NestJS API serving the database studio.",
+  "description": "Data Bridge backend — NestJS API serving the database studio.",
   "scripts": {
     "build": "prisma generate && nest build",
     "dev": "prisma generate && prisma migrate deploy && nest start --watch",
@@ -21,7 +21,7 @@
     "@nestjs/platform-express": "^10.4.7",
     "@powersync/mysql-zongji": "^0.6.0",
     "@prisma/client": "^5.22.0",
-    "@relay/core": "workspace:*",
+    "@data-bridge/core": "workspace:*",
     "bullmq": "^5.34.0",
     "dotenv": "^16.4.5",
     "ioredis": "^5.4.1",

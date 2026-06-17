@@ -1,5 +1,5 @@
 {
-  "name": "@relay/web",
+  "name": "@data-bridge/web",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -23,7 +23,7 @@
     "@radix-ui/react-switch": "^1.2.6",
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-tooltip": "^1.2.8",
-    "@relay/core": "workspace:*",
+    "@data-bridge/core": "workspace:*",
     "@tanstack/react-query": "^5.59.16",
     "@tanstack/react-table": "^8.20.5",
     "@xyflow/react": "^12.3.5",

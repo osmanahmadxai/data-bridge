@@ -1,7 +1,7 @@
 'use client';
 
 import { Plus, Radio, Webhook, Zap } from 'lucide-react';
-import type { Hook } from '@relay/core';
+import type { Hook } from '@data-bridge/core';
 import { useHooks } from '@/lib/queries';
 import { useStudio } from '@/lib/store';
 import { cn } from '@/lib/utils';
@@ -40,7 +40,7 @@ export function HookList() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* Hooks / Jobs tabs */}
+      {/* hooks / jobs tabs */}
       <div className="grid grid-cols-2 gap-1 px-2 pt-2">
         {TABS.map((t) => (
           <button

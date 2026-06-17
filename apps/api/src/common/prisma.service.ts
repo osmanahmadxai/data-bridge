@@ -7,8 +7,8 @@ import {
 import { PrismaClient } from '@prisma/client';
 
 /**
- * Prisma client lifecycle, managed by Nest. Backs the application's own
- * metadata store (saved connections) only.
+ * Prisma client lifecycle, managed by Nest. backs the app's own
+ * metadata store (saved connections) only
  */
 @Injectable()
 export class PrismaService

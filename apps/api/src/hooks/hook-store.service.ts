@@ -1,8 +1,8 @@
 /**
- * Persistent store for automation hooks (Prisma / SQLite). Nested config is kept
+ * persistent store for automation hooks (Prisma / SQLite). nested config is kept
  * as JSON strings; the destination's auth secret is the only sensitive field and
- * is encrypted at rest in `auth_enc`, mirroring how `ConnectionStoreService`
- * handles passwords. Callers get a redacted view unless they explicitly resolve.
+ * is encrypted at rest in `auth_enc`, same as how `ConnectionStoreService`
+ * handles passwords. callers get a redacted view unless they explicitly resolve.
  */
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
@@ -13,18 +13,18 @@ import {
   type HookDestination,
   type HookInputDTO,
   NotFoundError,
-} from '@relay/core';
+} from '@data-bridge/core';
 import { CryptoService } from '../common/crypto.service';
 import { PrismaService } from '../common/prisma.service';
 import type { ResolvedHook } from './hooks.types';
 
 const REDACTED = '********';
 
-/** The resolved-config snapshot persisted on a run (auth stays encrypted). */
+/** the resolved-config snapshot persisted on a run (auth stays encrypted) */
 interface RunSnapshot {
   name: string;
   source: HookInputDTO['source'];
-  destination: HookDestination; // secret blanked
+  destination: HookDestination; // secret blanked out
   authEnc: string | null;
   transform: HookInputDTO['transform'];
   delivery: HookInputDTO['delivery'];
@@ -39,7 +39,7 @@ export class HookStoreService {
 
   /* ----- secret split / merge ----- */
 
-  /** Separate the encryptable secret from the rest of the destination. */
+  /** split the encryptable secret out from the rest of the destination */
   private splitSecret(dest: HookDestination): {
     sanitized: HookDestination;
     secret: string | null;
@@ -53,14 +53,17 @@ export class HookStoreService {
     }
     if (auth.type === 'header') {
       return {
-        sanitized: { ...dest, auth: { type: 'header', name: auth.name, value: '' } },
+        sanitized: {
+          ...dest,
+          auth: { type: 'header', name: auth.name, value: '' },
+        },
         secret: auth.value,
       };
     }
     return { sanitized: dest, secret: null };
   }
 
-  /** Re-attach the auth secret to a sanitized destination. */
+  /** re-attach the auth secret to a sanitized destination */
   private withSecret(
     dest: HookDestination,
     secret: string | null,
@@ -95,7 +98,9 @@ export class HookStoreService {
       destination: this.withSecret(sanitized, secret),
       transform: JSON.parse(row.transformJson),
       delivery: JSON.parse(row.deliveryJson),
-      trigger: row.triggerJson ? JSON.parse(row.triggerJson) : { kind: 'replay' },
+      trigger: row.triggerJson
+        ? JSON.parse(row.triggerJson)
+        : { kind: 'replay' },
       enabled: row.enabled,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
@@ -119,7 +124,7 @@ export class HookStoreService {
     return this.toHook(await this.getRow(id), false);
   }
 
-  /** Full config including the decrypted auth secret — server-internal only. */
+  /** full config including the decrypted auth secret, server-internal only */
   async resolve(id: string): Promise<ResolvedHook> {
     const hook = this.toHook(await this.getRow(id), true);
     return hook;
@@ -148,7 +153,7 @@ export class HookStoreService {
     const existing = await this.getRow(id);
     const { sanitized, secret } = this.splitSecret(input.destination);
 
-    // Preserve the stored secret when the client echoes the redaction sentinel.
+    // keep the stored secret when the client echoes the redaction sentinel
     const authEnc =
       secret === REDACTED
         ? existing.authEnc
@@ -180,13 +185,13 @@ export class HookStoreService {
 
   /* ----- run snapshot (auth kept encrypted) ----- */
 
-  /** Build the config snapshot persisted on a run. */
+  /** build the config snapshot persisted on a run */
   async snapshotJson(id: string): Promise<string> {
     const row = await this.getRow(id);
     const snapshot: RunSnapshot = {
       name: row.name,
       source: JSON.parse(row.sourceJson),
-      destination: JSON.parse(row.destinationJson), // secret blanked
+      destination: JSON.parse(row.destinationJson), // secret blanked out
       authEnc: row.authEnc,
       transform: JSON.parse(row.transformJson),
       delivery: JSON.parse(row.deliveryJson),
@@ -194,18 +199,21 @@ export class HookStoreService {
     return JSON.stringify(snapshot);
   }
 
-  /** Decrypt a run snapshot into a runnable, fully-resolved hook config. */
+  /** decrypt a run snapshot into a runnable, fully-resolved hook config */
   resolveSnapshot(json: string): ResolvedHook {
     const s = JSON.parse(json) as RunSnapshot;
     return {
       id: '',
       name: s.name,
       source: s.source,
-      destination: this.withSecret(s.destination, this.decryptSecret(s.authEnc)),
+      destination: this.withSecret(
+        s.destination,
+        this.decryptSecret(s.authEnc),
+      ),
       transform: s.transform,
       delivery: s.delivery,
-      // A snapshot is only used to execute a replay run; the trigger is resolved
-      // live for watch hooks, so a placeholder is fine here.
+      // a snapshot is only used to execute a replay run; the trigger is resolved
+      // live for watch hooks, so a placeholder is fine here
       trigger: { kind: 'replay' },
       enabled: true,
     };

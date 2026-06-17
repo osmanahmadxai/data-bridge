@@ -1,4 +1,4 @@
-/** Client-side export of result rows to CSV or JSON (no server round-trip). */
+/** client-side export of result rows to CSV or JSON, no server round-trip */
 
 function cell(value: unknown): string {
   if (value === null || value === undefined) return '';
@@ -26,7 +26,7 @@ function download(filename: string, content: string, mime: string): void {
   URL.revokeObjectURL(url);
 }
 
-/** Trigger a browser download of arbitrary text (used by backups). */
+/** trigger a browser download of arbitrary text (used by backups) */
 export function downloadText(filename: string, content: string): void {
   const mime = filename.endsWith('.json') ? 'application/json' : 'text/plain';
   download(filename, content, mime);

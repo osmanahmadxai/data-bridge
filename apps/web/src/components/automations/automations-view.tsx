@@ -95,7 +95,7 @@ function HookPanel({
     ['queued', 'running', 'canceling'].includes(r.status),
   );
 
-  // Default to (and follow) the most recent run.
+  // default to (and follow) the most recent run
   useEffect(() => {
     if (!runs || runs.length === 0) {
       setSelectedRunId(null);
@@ -164,7 +164,7 @@ function HookPanel({
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header */}
+      {/* header */}
       <div className="flex items-start gap-3 border-b px-4 py-3">
         <div className="min-w-0">
           <h2 className="truncate text-base font-semibold">{hookName}</h2>
@@ -222,7 +222,7 @@ function HookPanel({
         </div>
       </div>
 
-      {/* Runs strip */}
+      {/* runs strip */}
       <div className="flex items-center gap-2 overflow-x-auto border-b px-4 py-2">
         {(!runs || runs.length === 0) && (
           <p className="text-xs text-muted-foreground">
@@ -250,7 +250,7 @@ function HookPanel({
         ))}
       </div>
 
-      {/* Selected run */}
+      {/* selected run */}
       <div className="flex min-h-0 flex-1 flex-col">
         {selectedRun ? (
           <RunDetail

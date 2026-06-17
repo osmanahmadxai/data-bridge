@@ -1,7 +1,7 @@
 /**
- * Server-internal hook types. The fully *resolved* config carries the decrypted
- * auth secret and is used only inside the runner — it is never serialized back
- * to a client (the API surface returns the redacted {@link Hook} from core).
+ * server-internal hook types. the fully *resolved* config carries the decrypted
+ * auth secret and is only used inside the runner, it's never serialized back to
+ * a client (the API surface returns the redacted {@link Hook} from core).
  */
 import type {
   HookDeliveryConfig,
@@ -9,9 +9,9 @@ import type {
   HookSource,
   HookTransformConfig,
   HookTrigger,
-} from '@relay/core';
+} from '@data-bridge/core';
 
-/** A hook with its auth secret decrypted — server-internal use only. */
+/** a hook with its auth secret decrypted, server-internal use only */
 export interface ResolvedHook {
   id: string;
   name: string;
@@ -23,7 +23,7 @@ export interface ResolvedHook {
   enabled: boolean;
 }
 
-/** Outcome of a single HTTP delivery attempt sequence. */
+/** outcome of a single HTTP delivery attempt sequence */
 export interface DeliveryOutcome {
   status: 'success' | 'failed';
   httpStatus: number | null;
@@ -34,13 +34,13 @@ export interface DeliveryOutcome {
   durationMs: number;
 }
 
-/** The BullMQ job payload for the `hook-runs` queue. */
+/** the BullMQ job payload for the `hook-runs` queue */
 export interface HookRunJob {
   runId: string;
   hookId: string;
 }
 
-/** The BullMQ job payload for a `hook-watch` poll cycle. */
+/** the BullMQ job payload for a `hook-watch` poll cycle */
 export interface HookWatchJob {
   hookId: string;
 }

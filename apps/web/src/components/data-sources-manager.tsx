@@ -33,9 +33,9 @@ const TABS: { id: StudioTab; label: string; icon: typeof Table2 }[] = [
 ];
 
 /**
- * The full database workbench — connections, schema, data browser and DDL —
- * surfaced as a focused overlay within the hooks app. The data source exists to
- * feed hooks, so it lives one click away rather than in the main chrome.
+ * full database workbench (connections, schema, data browser, DDL) shown as an
+ * overlay in the hooks app. data sources feed hooks, so it's one click away
+ * rather than in the main chrome.
  */
 export function DataSourcesManager() {
   const { dataSourcesOpen, closeDataSources, activeConnectionId, activeDatabase, selected, tab, setTab } =

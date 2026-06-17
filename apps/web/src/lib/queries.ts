@@ -11,7 +11,7 @@ import type {
   ConnectionInputDTO,
   HookInputDTO,
   HookRun,
-} from '@relay/core';
+} from '@data-bridge/core';
 import { api } from './api';
 
 export const queryKeys = {
@@ -184,7 +184,7 @@ export function useCancelHookRun(hookId: string) {
   });
 }
 
-/** Live-polls while any run is still active. */
+/** live-polls while any run is still active */
 export function useHookRuns(hookId: string | null) {
   return useQuery({
     queryKey: hookId ? queryKeys.hookRuns(hookId) : ['hookRuns', 'none'],
@@ -226,9 +226,9 @@ export function useHookDeliveries(
 
   const { refetch } = query;
 
-  // When a run transitions from active → terminal, fire one final refetch so
-  // deliveries written in the gap between the last poll and completion are shown.
-  // Also invalidate all sibling windows so navigating to another page is fresh.
+  // when a run goes from active to terminal, fire one final refetch so
+  // deliveries written between the last poll and completion show up.
+  // also invalidate sibling windows so navigating to another page is fresh
   useEffect(() => {
     if (prevLiveRef.current && !live && hookId && runId) {
       void refetch();

@@ -1,13 +1,13 @@
 /**
- * Single-request HTTP delivery with retries, exponential backoff and a hard
- * per-request timeout. Pure transport: it knows nothing about runs, rows, or
- * persistence — the caller supplies the body and records the outcome.
+ * single-request HTTP delivery with retries, exponential backoff and a hard
+ * per-request timeout. pure transport: knows nothing about runs, rows, or
+ * persistence. the caller supplies the body and records the outcome.
  *
- * Auth secrets are applied to headers at send time and never logged; only a
- * truncated response snippet is retained.
+ * auth secrets get applied to headers at send time and are never logged, only a
+ * truncated response snippet is kept.
  */
 import { Injectable, Logger } from '@nestjs/common';
-import type { HookDeliveryConfig, HookDestination } from '@relay/core';
+import type { HookDeliveryConfig, HookDestination } from '@data-bridge/core';
 import type { DeliveryOutcome } from './hooks.types';
 
 const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
@@ -17,7 +17,7 @@ const RESPONSE_LIMIT = 16_384;
 export class DeliveryService {
   private readonly logger = new Logger('HookDelivery');
 
-  /** Build request headers, merging static headers with the auth scheme. */
+  /** build request headers, merging static headers with the auth scheme */
   buildHeaders(
     dest: HookDestination,
     idempotencyKey?: string,
@@ -37,7 +37,7 @@ export class DeliveryService {
     return headers;
   }
 
-  /** Headers with the auth secret redacted — safe for preview/UI. */
+  /** headers with the auth secret redacted, safe for preview/UI */
   redactedHeaders(dest: HookDestination): Record<string, string> {
     const headers = this.buildHeaders(dest);
     if (dest.auth.type === 'bearer' && headers['authorization']) {
@@ -49,10 +49,10 @@ export class DeliveryService {
   }
 
   /**
-   * Send one request, retrying transient failures up to `maxAttempts`. Resolves
-   * with an outcome describing success or terminal failure — it does not throw
-   * for HTTP errors (the run decides whether to continue). It re-throws only if
-   * the run's abort signal fires, so the caller can finalize as canceled.
+   * send one request, retrying transient failures up to `maxAttempts`. resolves
+   * with an outcome describing success or terminal failure, it doesn't throw for
+   * HTTP errors (the run decides whether to continue). re-throws only if the
+   * run's abort signal fires, so the caller can finalize as canceled.
    */
   async send(
     body: unknown,
@@ -103,7 +103,7 @@ export class DeliveryService {
         }
         break; // non-retryable HTTP error
       } catch (err) {
-        // A run-level abort must propagate; a timeout/network error is retryable.
+        // a run-level abort must propagate, a timeout/network error is retryable
         if (runSignal.aborted) throw err;
         lastError = describeFetchError(err);
         lastStatus = null;
@@ -125,7 +125,7 @@ export class DeliveryService {
     };
   }
 
-  /** Exponential backoff with jitter, honoring a numeric `Retry-After`. */
+  /** exponential backoff with jitter, honoring a numeric `Retry-After` */
   private async backoff(
     attempt: number,
     delivery: HookDeliveryConfig,
@@ -145,9 +145,9 @@ export class DeliveryService {
 }
 
 /**
- * Turn an opaque `fetch failed` into something actionable. Node's `fetch`
- * (undici) wraps the real reason in `error.cause` — surface its `code`,
- * `address`/`port` and message so a delivery log says e.g.
+ * turn an opaque `fetch failed` into something actionable. Node's `fetch`
+ * (undici) wraps the real reason in `error.cause`, so surface its `code`,
+ * `address`/`port` and message. a delivery log then reads e.g.
  * "fetch failed (ECONNREFUSED 127.0.0.1:8000)" instead of just "fetch failed".
  */
 export function describeFetchError(err: unknown): string {
@@ -166,7 +166,7 @@ export function describeFetchError(err: unknown): string {
   return detail ? `${err.message} (${detail.trim()})` : err.message;
 }
 
-/** Sleep that resolves early if the signal aborts — keeps cancel responsive. */
+/** sleep that resolves early if the signal aborts, keeps cancel responsive */
 export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   if (ms <= 0 || signal?.aborted) return Promise.resolve();
   return new Promise((resolve) => {

@@ -1,4 +1,4 @@
-/** MySQL / MariaDB adapter backed by `mysql2` with a per-connection pool. */
+/** MySQL / MariaDB adapter backed by `mysql2` with a per-connection pool */
 import mysql, { type Pool, type RowDataPacket } from 'mysql2/promise';
 import type {
   AdapterCapabilities,
@@ -129,7 +129,7 @@ export class MysqlAdapter extends BaseSqlAdapter {
     hasFilters: boolean;
   }): Promise<{ total: number | null; estimated: boolean }> {
     if (args.hasFilters) return { total: null, estimated: false };
-    // InnoDB exposes a fast row estimate in information_schema.
+    // InnoDB exposes a fast row estimate in information_schema
     const res = await this.runSql(
       `SELECT table_rows AS count FROM information_schema.tables
        WHERE table_schema = DATABASE() AND table_name = ?`,

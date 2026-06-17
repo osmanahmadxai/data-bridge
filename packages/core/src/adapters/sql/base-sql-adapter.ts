@@ -1,11 +1,11 @@
 /**
- * Shared implementation for relational engines.
+ * shared implementation for relational engines.
  *
- * Concrete SQL adapters (Postgres, MySQL, SQLite, ...) only implement the
+ * concrete SQL adapters (Postgres, MySQL, SQLite, ...) only implement the
  * connection lifecycle, schema introspection, and three small dialect
- * primitives (`quoteIdent`, `placeholder`, `runSql`). Everything user-facing —
- * browse, raw query, and row mutations — is built here ONCE, with strict
- * parameterization so no user value is ever concatenated into SQL.
+ * primitives (`quoteIdent`, `placeholder`, `runSql`). everything user-facing
+ * (browse, raw query, row mutations) is built here ONCE, with strict
+ * parameterization so no user value is ever concatenated into SQL
  */
 import type {
   AdapterCapabilities,
@@ -32,7 +32,7 @@ import { BadRequestError } from '../../errors';
 
 const RESTORE_BATCH = 500;
 
-/** Reject identifiers that aren't safe to embed in DDL (which can't be bound). */
+/** reject identifiers that aren't safe to embed in DDL (which can't be bound) */
 export function assertSafeIdentifier(name: string): string {
   if (!/^[A-Za-z_][A-Za-z0-9_$]*$/.test(name)) {
     throw new BadRequestError(
@@ -61,7 +61,7 @@ export abstract class BaseSqlAdapter implements DatabaseAdapter {
       : DEFAULT_MAX_ROWS;
   }
 
-  /* ----- lifecycle / introspection: implemented by concrete adapters ----- */
+  /* ----- lifecycle / introspection: concrete adapters implement these ----- */
   abstract connect(): Promise<void>;
   abstract ping(): Promise<void>;
   abstract close(): Promise<void>;
@@ -70,22 +70,22 @@ export abstract class BaseSqlAdapter implements DatabaseAdapter {
 
   /* ----- dialect primitives ----- */
 
-  /** Quote an identifier (table/column) safely for this dialect. */
+  /** quote an identifier (table/column) safely for this dialect */
   protected abstract quoteIdent(identifier: string): string;
 
   /**
-   * Render a positional placeholder for the n-th (1-based) parameter.
-   * Postgres → `$1`, MySQL/SQLite → `?`.
+   * render a positional placeholder for the n-th (1-based) parameter.
+   * Postgres → `$1`, MySQL/SQLite → `?`
    */
   protected abstract placeholder(index: number): string;
 
-  /** Execute a parameterized statement and return a normalized result. */
+  /** run a parameterized statement and return a normalized result */
   protected abstract runSql(
     sql: string,
     params: unknown[],
   ): Promise<QueryResult>;
 
-  /** LIKE keyword to use for case-insensitive matching (Postgres → ILIKE). */
+  /** LIKE keyword for case-insensitive matching (Postgres → ILIKE) */
   protected likeKeyword(): string {
     return 'LIKE';
   }
@@ -99,8 +99,8 @@ export abstract class BaseSqlAdapter implements DatabaseAdapter {
   }
 
   /**
-   * Build a parameterized WHERE clause from filters.
-   * Returns the SQL fragment (without leading WHERE) and bound params.
+   * build a parameterized WHERE clause from filters.
+   * returns the SQL fragment (without leading WHERE) and the bound params
    */
   private buildWhere(
     filters: FilterSpec[] | undefined,
@@ -185,8 +185,8 @@ export abstract class BaseSqlAdapter implements DatabaseAdapter {
           .join(', ');
     }
 
-    // Fetch one extra row to learn whether a next page exists — far cheaper
-    // than a COUNT(*) on every page for large tables.
+    // fetch one extra row to learn whether a next page exists, way cheaper
+    // than a COUNT(*) on every page for large tables
     const probe = limit + 1;
     const sql =
       `SELECT * FROM ${target}${whereSql}${orderSql} ` +
@@ -220,9 +220,9 @@ export abstract class BaseSqlAdapter implements DatabaseAdapter {
   }
 
   /**
-   * Row total for the browse footer. The default runs an exact `COUNT(*)`,
-   * which is fine for local engines (SQLite). Server engines override this to
-   * use cheap catalog estimates and to skip counting filtered views entirely.
+   * row total for the browse footer. the default runs an exact `COUNT(*)`,
+   * which is fine for local engines (SQLite). server engines override this to
+   * use cheap catalog estimates and to skip counting filtered views entirely
    */
   protected async countRows(args: {
     table: string;
@@ -325,17 +325,17 @@ export abstract class BaseSqlAdapter implements DatabaseAdapter {
 
   /* ----- schema management (DDL) ----- */
 
-  /** Auto-increment keyword appended after the type (MySQL → AUTO_INCREMENT). */
+  /** auto-increment keyword appended after the type (MySQL → AUTO_INCREMENT) */
   protected autoIncrementKeyword(): string | null {
     return null;
   }
 
-  /** Serial pseudo-type that replaces the column type (Postgres → SERIAL). */
+  /** serial pseudo-type that replaces the column type (Postgres → SERIAL) */
   protected serialType(): string | null {
     return null;
   }
 
-  /** Validate a raw column type string (it cannot be a bound parameter). */
+  /** validate a raw column type string (it can't be a bound parameter) */
   protected validateType(type: string): string {
     const t = type.trim();
     if (!/^[A-Za-z0-9_ (),]+$/.test(t)) {
@@ -400,7 +400,7 @@ export abstract class BaseSqlAdapter implements DatabaseAdapter {
 
   /* ----- backup & restore ----- */
 
-  /** Boolean literal for SQL dumps (Postgres → TRUE/FALSE, others → 1/0). */
+  /** boolean literal for SQL dumps (Postgres → TRUE/FALSE, others → 1/0) */
   protected booleanLiteral(value: boolean): string {
     return value ? '1' : '0';
   }
@@ -424,7 +424,7 @@ export abstract class BaseSqlAdapter implements DatabaseAdapter {
 
     if (opts.format === 'json') {
       const doc: BackupDocument = {
-        relay: 'backup',
+        dataBridge: 'backup',
         version: 1,
         engine: this.engine,
         database,
@@ -447,9 +447,9 @@ export abstract class BaseSqlAdapter implements DatabaseAdapter {
       return JSON.stringify(doc, null, 2);
     }
 
-    // SQL dump: DDL + INSERT statements.
+    // SQL dump: DDL + INSERT statements
     const out: string[] = [
-      `-- Relay SQL backup`,
+      `-- Data Bridge SQL backup`,
       `-- engine: ${this.engine}`,
       `-- database: ${database}`,
       ``,
@@ -477,7 +477,7 @@ export abstract class BaseSqlAdapter implements DatabaseAdapter {
     const defs = t.columns.map((c) => {
       let s = `  ${this.quoteIdent(c.name)} ${c.dataType}`;
       if (!c.nullable) s += ' NOT NULL';
-      // Skip sequence-backed defaults — they aren't portable in a logical dump.
+      // skip sequence-backed defaults, they aren't portable in a logical dump
       if (c.defaultValue && !/nextval|auto_increment/i.test(c.defaultValue)) {
         s += ` DEFAULT ${c.defaultValue}`;
       }
@@ -518,13 +518,13 @@ export abstract class BaseSqlAdapter implements DatabaseAdapter {
     } catch {
       throw new BadRequestError('Backup file is not valid JSON');
     }
-    if (doc.relay !== 'backup' || !Array.isArray(doc.tables)) {
-      throw new BadRequestError('Not a Relay backup file');
+    if (doc.dataBridge !== 'backup' || !Array.isArray(doc.tables)) {
+      throw new BadRequestError('Not a Data Bridge backup file');
     }
 
     let rows = 0;
     for (const table of doc.tables) {
-      // Best-effort recreate; ignore "already exists".
+      // best-effort recreate; ignore "already exists"
       await this.createTable({
         schema: table.schema,
         table: table.name,
@@ -547,7 +547,7 @@ export abstract class BaseSqlAdapter implements DatabaseAdapter {
     return { tables: doc.tables.length, rows };
   }
 
-  /** Column type used when recreating a table from a column-name-only dump. */
+  /** column type used when recreating a table from a column-name-only dump */
   protected defaultRestoreType(): string {
     return 'TEXT';
   }
@@ -584,9 +584,9 @@ export abstract class BaseSqlAdapter implements DatabaseAdapter {
   }
 
   /**
-   * Primary-key columns for a relation, used to build safe row identities.
-   * Default implementation derives them from the schema introspection; engines
-   * may override for efficiency.
+   * primary-key columns for a relation, used to build safe row identities.
+   * the default derives them from the schema introspection; engines may
+   * override for efficiency
    */
   protected async primaryKeyColumns(
     table: string,
@@ -602,7 +602,7 @@ export abstract class BaseSqlAdapter implements DatabaseAdapter {
   }
 }
 
-/** Coerce a JSON-decoded value into something a driver can bind for INSERT. */
+/** coerce a JSON-decoded value into something a driver can bind for INSERT */
 function normalizeForInsert(value: unknown): unknown {
   if (value !== null && typeof value === 'object' && !(value instanceof Date)) {
     return JSON.stringify(value);
@@ -611,9 +611,9 @@ function normalizeForInsert(value: unknown): unknown {
 }
 
 /**
- * Split a `.sql` script into individual statements, respecting single-quoted
- * strings (with `''` escapes) and `--` / block comments. Good enough for
- * Relay-generated dumps and typical hand-written scripts.
+ * split a `.sql` script into individual statements, respecting single-quoted
+ * strings (with `''` escapes) and `--` / block comments. good enough for
+ * Data Bridge-generated dumps and typical hand-written scripts
  */
 function splitSqlStatements(sql: string): string[] {
   const out: string[] = [];

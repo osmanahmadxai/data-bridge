@@ -2,7 +2,7 @@
 
 import { Ban, Loader2, Play, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
-import type { HookRun, HookRunStatus } from '@relay/core';
+import type { HookRun, HookRunStatus } from '@data-bridge/core';
 import { ApiError } from '@/lib/api';
 import { useCancelHookRun, useRetryFailed, useStartHookRun } from '@/lib/queries';
 import { cn } from '@/lib/utils';
@@ -78,7 +78,7 @@ export function RunDetail({
   hookId: string;
   run: HookRun;
   endpoint: { url: string; method: string };
-  /** Hooks (watch/CDC) are continuous listeners: no Cancel/Resume, no progress. */
+  /** hooks (watch/CDC) are continuous listeners: no Cancel/Resume, no progress */
   isHook: boolean;
 }) {
   const cancel = useCancelHookRun(hookId);
@@ -126,12 +126,12 @@ export function RunDetail({
     }
   }
 
-  // Available whenever there are failures — including a live (CDC/watch) run.
+  // available whenever there are failures, including a live (CDC/watch) run
   const canRetry = run.failedCount > 0;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* Header: status + actions */}
+      {/* header: status + actions */}
       <div className="flex items-center gap-3 px-4 pt-3">
         <RunStatusBadge status={run.status} />
         <span className="text-muted-foreground text-xs">
@@ -142,8 +142,8 @@ export function RunDetail({
             : `started ${new Date(run.startedAt).toLocaleString()}`}
         </span>
         <div className="ml-auto flex items-center gap-2">
-          {/* Cancel/Resume are job controls. A hook is started/stopped from the
-              panel header above — "resuming" one would re-stream the whole table. */}
+          {/* cancel/resume are job controls. a hook is started/stopped from the
+              panel header above, "resuming" one would re-stream the whole table */}
           {!isHook && isActive && (
             <Button size="sm" variant="outline" onClick={handleCancel} disabled={cancel.isPending}>
               {cancel.isPending ? (
@@ -187,8 +187,8 @@ export function RunDetail({
         </div>
       </div>
 
-      {/* Stat cards — a listener has no finite total/queue, so it shows a
-          delivered/failed/skipped breakdown instead of progress-to-completion. */}
+      {/* stat cards. a listener has no finite total/queue, so it shows a
+          delivered/failed/skipped breakdown instead of progress-to-completion */}
       {isHook ? (
         <div className="grid grid-cols-2 gap-2 px-4 py-3 sm:grid-cols-4">
           <Stat label="Delivered" value={run.sentCount.toLocaleString()} tone="success" />
@@ -217,7 +217,7 @@ export function RunDetail({
             />
           </div>
 
-          {/* Progress */}
+          {/* progress */}
           {pct != null && (
             <div className="px-4 pb-3">
               <div className="bg-muted h-1.5 w-full overflow-hidden rounded-full">

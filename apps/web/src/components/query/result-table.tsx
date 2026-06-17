@@ -1,7 +1,7 @@
 'use client';
 
 import { Download } from 'lucide-react';
-import type { QueryResult } from '@relay/core';
+import type { QueryResult } from '@data-bridge/core';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {

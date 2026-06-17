@@ -1,6 +1,6 @@
-// Ensures local env files exist by copying from the committed examples.
-// Idempotent: never overwrites files that already exist. Runs automatically on
-// `pnpm install` (root postinstall) and before `pnpm dev` / `pnpm start`.
+// makes sure local env files exist by copying from the committed examples.
+// idempotent, never overwrites files that already exist. runs automatically on
+// `pnpm install` (root postinstall) and before `pnpm dev` / `pnpm start`
 import { copyFileSync, existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';

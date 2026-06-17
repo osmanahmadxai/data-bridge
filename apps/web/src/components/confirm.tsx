@@ -32,7 +32,7 @@ type ConfirmFn = (options: ConfirmOptions) => Promise<boolean>;
 
 const ConfirmContext = createContext<ConfirmFn>(() => Promise.resolve(false));
 
-/** Imperative confirm() that resolves true/false, rendered as a shadcn dialog. */
+/** imperative confirm() that resolves true/false, rendered as a shadcn dialog */
 export function useConfirm(): ConfirmFn {
   return useContext(ConfirmContext);
 }

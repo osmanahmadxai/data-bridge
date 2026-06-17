@@ -1,4 +1,4 @@
-/** SQLite adapter backed by `better-sqlite3` (synchronous, single file). */
+/** SQLite adapter backed by `better-sqlite3` (synchronous, single file) */
 import Database from 'better-sqlite3';
 import type {
   AdapterCapabilities,
@@ -202,7 +202,7 @@ export class SqliteAdapter extends BaseSqlAdapter {
     };
   }
 
-  /** SQLite requires the auto-increment PK to be declared inline. */
+  /** SQLite needs the auto-increment PK declared inline */
   override async createTable(spec: CreateTableSpec): Promise<void> {
     if (!spec.columns.length) {
       throw new QueryError('A table needs at least one column');
@@ -230,7 +230,7 @@ export class SqliteAdapter extends BaseSqlAdapter {
   }
 
   override async truncateTable(table: string): Promise<void> {
-    // SQLite has no TRUNCATE; DELETE is the equivalent.
+    // SQLite has no TRUNCATE; DELETE is the equivalent
     await this.runSql(`DELETE FROM ${this.quoteIdent(table)}`, []);
   }
 

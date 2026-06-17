@@ -1,6 +1,6 @@
 /**
- * Typed error hierarchy. Route handlers map these to HTTP status codes in one
- * place, so domain code can throw meaningfully without knowing about HTTP.
+ * typed error hierarchy. route handlers map these to HTTP status codes in one
+ * place, so domain code can throw meaningfully without knowing about HTTP
  */
 
 export type AppErrorCode =
@@ -67,7 +67,7 @@ export class UnsupportedError extends AppError {
   }
 }
 
-/** Normalize any thrown value into an AppError. */
+/** normalize any thrown value into an AppError */
 export function toAppError(err: unknown): AppError {
   if (err instanceof AppError) return err;
   if (err instanceof Error) {

@@ -1,10 +1,10 @@
-import type { DatabaseEngine } from '@relay/core';
+import type { DatabaseEngine } from '@data-bridge/core';
 
 interface EngineMeta {
   label: string;
-  /** Short tag shown in the avatar square. */
+  /** short tag shown in the avatar square */
   abbr: string;
-  /** Tailwind classes for the engine accent (bg + text). */
+  /** tailwind classes for the engine accent (bg + text) */
   className: string;
 }
 

@@ -1,11 +1,11 @@
 /**
- * Driver registry — the single extension point for new databases.
+ * driver registry, the single extension point for new databases.
  *
- * To add an engine:
- *   1. Implement `DatabaseAdapter` in `core/adapters/<engine>.ts`.
- *   2. Add a `DriverDefinition` entry below.
- * The connection form, sidebar, and routing all derive from this list, so no
- * other file needs to change.
+ * to add an engine:
+ *   1. implement `DatabaseAdapter` in `core/adapters/<engine>.ts`
+ *   2. add a `DriverDefinition` entry below
+ * the connection form, sidebar, and routing all derive from this list, so no
+ * other file needs to change
  */
 import type {
   AdapterCapabilities,
@@ -14,29 +14,29 @@ import type {
   DatabaseEngine,
 } from './types';
 
-/** A single connection-form field descriptor (drives the dynamic UI form). */
+/** a single connection-form field descriptor (drives the dynamic UI form) */
 export interface DriverField {
   key: 'host' | 'port' | 'user' | 'password' | 'database' | 'connectionString';
   label: string;
   type: 'text' | 'password' | 'number';
   required: boolean;
   placeholder?: string;
-  /** Help text shown under the field. */
+  /** help text shown under the field */
   hint?: string;
 }
 
 export interface DriverDefinition {
   engine: DatabaseEngine;
   label: string;
-  /** One-line description for the engine picker. */
+  /** one-line description for the engine picker */
   description: string;
   defaultPort?: number;
   capabilities: AdapterCapabilities;
-  /** Fields shown in the connection editor for this engine. */
+  /** fields shown in the connection editor for this engine */
   fields: DriverField[];
-  /** Common column types offered in the create-table form (free text allowed). */
+  /** common column types offered in the create-table form (free text allowed) */
   dataTypes: string[];
-  /** Lazily constructs an adapter for the given config. */
+  /** lazily constructs an adapter for the given config */
   create: (config: ConnectionConfig) => DatabaseAdapter;
 }
 
@@ -56,7 +56,7 @@ export function listDrivers(): DriverDefinition[] {
   return [...registry.values()];
 }
 
-/** Construct an adapter instance for a saved connection. */
+/** construct an adapter instance for a saved connection */
 export function createAdapter(config: ConnectionConfig): DatabaseAdapter {
   const def = registry.get(config.engine);
   if (!def) {
@@ -65,7 +65,7 @@ export function createAdapter(config: ConnectionConfig): DatabaseAdapter {
   return def.create(config);
 }
 
-/** Public, serializable view of a driver for the client (no `create`). */
+/** public, serializable view of a driver for the client (no `create`) */
 export interface DriverInfo {
   engine: DatabaseEngine;
   label: string;

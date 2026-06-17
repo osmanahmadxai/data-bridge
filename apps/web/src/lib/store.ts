@@ -1,11 +1,11 @@
 'use client';
 
 import { create } from 'zustand';
-import type { RelationKind } from '@relay/core';
+import type { RelationKind } from '@data-bridge/core';
 
 export type StudioTab = 'data' | 'query' | 'structure' | 'diagram';
 
-/** Sidebar grouping: live "Hooks" (watch trigger) vs on-demand "Jobs" (replay). */
+/** sidebar grouping: live "Hooks" (watch trigger) vs on-demand "Jobs" (replay) */
 export type AutomationTab = 'hooks' | 'jobs';
 
 export interface SelectedRelation {
@@ -14,7 +14,7 @@ export interface SelectedRelation {
   kind: RelationKind;
 }
 
-/** Prefill payload when opening the hook editor (e.g. from the schema tree). */
+/** prefill payload when opening the hook editor (e.g. from the schema tree) */
 export interface HookEditorSeed {
   connectionId: string;
   database?: string;
@@ -42,22 +42,22 @@ interface StudioState {
   selected: SelectedRelation | null;
   tab: StudioTab;
 
-  /** Connection editor dialog state. */
+  /** connection editor dialog state */
   dialog: { open: boolean; editingId: string | null };
 
-  /** Hooks surface: which sidebar group is active + the selected hook. */
+  /** hooks surface: which sidebar group is active + the selected hook */
   automationTab: AutomationTab;
   selectedHookId: string | null;
-  /** Hook editor dialog: open + which hook (null = new) + optional prefill. */
+  /** hook editor dialog: open + which hook (null = new) + optional prefill */
   hookEditor: {
     open: boolean;
     editingId: string | null;
     seed: HookEditorSeed | null;
   };
-  /** The full DB/table management surface (connections, schema, browse, DDL). */
+  /** the full DB/table management surface (connections, schema, browse, DDL) */
   dataSourcesOpen: boolean;
 
-  /** Query editor tabs, lifted here so they survive view switches. */
+  /** query editor tabs, lifted here so they survive view switches */
   queryTabs: QueryTab[];
   activeQueryTabId: string;
 
@@ -80,7 +80,7 @@ interface StudioState {
   closeQueryTab: (id: string) => void;
   setActiveQueryTab: (id: string) => void;
   updateQueryTabSql: (id: string, sql: string) => void;
-  /** Open a statement in a NEW query tab and switch to the Query view. */
+  /** open a statement in a NEW query tab and switch to the Query view */
   openInQuery: (statement: string, name?: string) => void;
 
   openConnectionDialog: (editingId?: string | null) => void;
@@ -102,8 +102,8 @@ export const useStudio = create<StudioState>((set) => ({
   queryTabs: initial.tabs,
   activeQueryTabId: initial.activeId,
 
-  // Selecting a hook and browsing a table are mutually exclusive — the main
-  // view shows the table preview when one is picked, else the hooks workspace.
+  // selecting a hook and browsing a table are mutually exclusive. the main
+  // view shows the table preview when one is picked, else the hooks workspace
   setAutomationTab: (tab) => set({ automationTab: tab }),
   selectHook: (id) => set({ selectedHookId: id, selected: null }),
   openHookEditor: (opts) =>

@@ -7,7 +7,7 @@ import {
 import type { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 
-/** Wraps every successful response in a `{ data }` envelope. */
+/** wraps every successful response in a `{ data }` envelope */
 @Injectable()
 export class TransformInterceptor<T> implements NestInterceptor<T, { data: T }> {
   intercept(

@@ -1,11 +1,11 @@
 /**
- * Live adapter cache. Opening a database connection is expensive, so one
+ * live adapter cache. opening a database connection is expensive, so one
  * adapter instance per saved connection is kept alive across requests and
- * evicted after a period of inactivity.
+ * evicted after a period of inactivity
  */
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
-import { createAdapter } from '@relay/core/adapters';
-import type { ConnectionConfig, DatabaseAdapter } from '@relay/core';
+import { createAdapter } from '@data-bridge/core/adapters';
+import type { ConnectionConfig, DatabaseAdapter } from '@data-bridge/core';
 import { runtimeConfig } from '../common/runtime-config';
 import { ConnectionStoreService } from './connection-store.service';
 
@@ -47,10 +47,10 @@ export class AdapterPoolService implements OnModuleDestroy {
   }
 
   /**
-   * Acquire an adapter for a connection, optionally bound to a specific
-   * database. Engines like PostgreSQL bind a connection to a single database,
-   * so switching databases means a distinct adapter — we therefore cache one
-   * adapter per `(connection, database)` pair.
+   * acquire an adapter for a connection, optionally bound to a specific
+   * database. engines like PostgreSQL bind a connection to a single database,
+   * so switching databases means a distinct adapter, so we cache one
+   * adapter per `(connection, database)` pair
    */
   private async acquire(
     id: string,
@@ -81,8 +81,8 @@ export class AdapterPoolService implements OnModuleDestroy {
   }
 
   /**
-   * Run an operation against the live adapter for a connection, optionally
-   * targeting a specific database.
+   * run an operation against the live adapter for a connection, optionally
+   * targeting a specific database
    */
   async withAdapter<T>(
     id: string,
@@ -92,7 +92,7 @@ export class AdapterPoolService implements OnModuleDestroy {
     return fn(await this.acquire(id, database));
   }
 
-  /** Build a one-off adapter from a raw config (used by "test connection"). */
+  /** build a one-off adapter from a raw config (used by "test connection") */
   async test(config: ConnectionConfig): Promise<void> {
     const adapter = createAdapter(config);
     try {
@@ -104,8 +104,8 @@ export class AdapterPoolService implements OnModuleDestroy {
   }
 
   /**
-   * Evict (and close) every adapter for a connection — across all databases —
-   * after the connection is edited or deleted.
+   * evict (and close) every adapter for a connection, across all databases,
+   * after the connection is edited or deleted
    */
   async evict(id: string): Promise<void> {
     for (const [key, entry] of this.entries) {

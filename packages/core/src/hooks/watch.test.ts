@@ -46,7 +46,7 @@ describe('increment strategy', () => {
 describe('timestamp strategy', () => {
   it('dedupes rows sharing the boundary timestamp across polls', () => {
     let cursor = emptyCursor(TS);
-    // Poll 1: two rows at t1, one at t2.
+    // poll 1: two rows at t1, one at t2
     const p1 = advanceCursor(
       TS,
       cursor,
@@ -59,12 +59,12 @@ describe('timestamp strategy', () => {
     );
     expect(p1.newRows.map((r) => r.id)).toEqual([1, 2, 3]);
     cursor = p1.cursor;
-    // Cursor sits at t2 with id 3 as the boundary key.
+    // cursor sits at t2 with id 3 as the boundary key
     expect(watchQuery(TS, cursor).filters).toEqual([
       { column: 'updated_at', operator: 'gte', value: '2026-01-01T00:00:05Z' },
     ]);
 
-    // Poll 2 re-fetches id 3 (>= boundary) plus a new id 4 at the same instant.
+    // poll 2 re-fetches id 3 (>= boundary) plus a new id 4 at the same instant
     const p2 = advanceCursor(
       TS,
       cursor,
@@ -74,7 +74,7 @@ describe('timestamp strategy', () => {
       ],
       ['id'],
     );
-    // id 3 already emitted → only id 4 is new; both remembered as boundary.
+    // id 3 already emitted, so only id 4 is new, both remembered as boundary
     expect(p2.newRows.map((r) => r.id)).toEqual([4]);
   });
 

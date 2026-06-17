@@ -23,7 +23,7 @@ import {
   restoreSchema,
   updateRowSchema,
   type ConnectionInputDTO,
-} from '@relay/core';
+} from '@data-bridge/core';
 import type { z } from 'zod';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { AdapterPoolService } from './adapter-pool.service';
@@ -190,8 +190,8 @@ export class ConnectionsController {
     @Param('id') id: string,
     @Body(new ZodValidationPipe(databaseNameSchema)) dto: DatabaseNameDTO,
   ): Promise<{ success: true }> {
-    // Close any pooled connection we hold to the target database — the engine
-    // refuses to drop a database that still has active connections.
+    // close any pooled connection we hold to the target database, the engine
+    // refuses to drop a database that still has active connections
     await this.pool.evict(id);
     await this.pool.withAdapter(id, undefined, (a) => a.dropDatabase(dto.name));
     return { success: true };

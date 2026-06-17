@@ -1,11 +1,11 @@
-/** Server runtime configuration, resolved once from the environment. */
+/** server runtime config, resolved once from the environment */
 import { existsSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 function resolveDataDir(): string {
-  const dir = process.env.RELAY_DATA_DIR
-    ? resolve(process.env.RELAY_DATA_DIR)
-    : resolve(process.cwd(), '.relay');
+  const dir = process.env.DATABRIDGE_DATA_DIR
+    ? resolve(process.env.DATABRIDGE_DATA_DIR)
+    : resolve(process.cwd(), '.data-bridge');
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -14,24 +14,24 @@ const dataDir = resolveDataDir();
 
 export const runtimeConfig = {
   dataDir,
-  storeFile: resolve(dataDir, 'relay.db'),
+  storeFile: resolve(dataDir, 'data-bridge.db'),
   keyFile: resolve(dataDir, 'master.key'),
-  masterKey: process.env.RELAY_MASTER_KEY ?? null,
-  maxQueryRows: Number(process.env.RELAY_MAX_QUERY_ROWS ?? 5000),
-  poolIdleMs: Number(process.env.RELAY_POOL_IDLE_MS ?? 300_000),
+  masterKey: process.env.DATABRIDGE_MASTER_KEY ?? null,
+  maxQueryRows: Number(process.env.DATABRIDGE_MAX_QUERY_ROWS ?? 5000),
+  poolIdleMs: Number(process.env.DATABRIDGE_POOL_IDLE_MS ?? 300_000),
   port: Number(process.env.PORT ?? 4000),
   webOrigin: process.env.WEB_ORIGIN ?? true,
-  /** Redis URL backing the BullMQ hook-run queue. */
+  /** Redis URL backing the BullMQ hook-run queue */
   redisUrl: process.env.REDIS_URL ?? 'redis://localhost:6379',
-  /** Worker concurrency: how many hook runs may execute in parallel. */
-  hookConcurrency: Number(process.env.RELAY_HOOK_CONCURRENCY ?? 5),
+  /** worker concurrency: how many hook runs may run in parallel */
+  hookConcurrency: Number(process.env.DATABRIDGE_HOOK_CONCURRENCY ?? 5),
 } as const;
 
 /**
- * Parse {@link runtimeConfig.redisUrl} into ioredis connection options for
+ * parse {@link runtimeConfig.redisUrl} into ioredis connection options for
  * BullMQ. `maxRetriesPerRequest: null` is required by BullMQ's blocking
- * connections; ioredis still reconnects in the background, so a missing Redis
- * never crashes bootstrap — only enqueuing a run fails (with a clear message).
+ * connections. ioredis still reconnects in the background, so a missing Redis
+ * never crashes bootstrap, only enqueuing a run fails (with a clear message)
  */
 export function redisConnectionOptions(): {
   host: string;

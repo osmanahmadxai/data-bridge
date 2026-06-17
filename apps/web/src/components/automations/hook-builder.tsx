@@ -18,7 +18,7 @@ import {
   type HookInputDTO,
   type SortSpec,
   type TableSchema,
-} from '@relay/core';
+} from '@data-bridge/core';
 import { api, ApiError } from '@/lib/api';
 import {
   useBrowse,
@@ -124,14 +124,14 @@ export function HookBuilder() {
     new Map(),
   );
   const [included, setIncluded] = useState<Set<string>>(new Set());
-  /** Column preference: null = all columns, array = a pinned subset (editing). */
+  /** column preference: null = all columns, array = a pinned subset (editing) */
   const [fieldsPref, setFieldsPref] = useState<string[] | null>(null);
   const [offset, setOffset] = useState(0);
 
   // ----- trigger -----
-  // The builder is locked to one of two environments, decided by the sidebar tab
-  // (new) or the hook's existing trigger (editing). 'job' = replay-only;
-  // 'hook' = listen-only (polling/CDC). They never share trigger UI.
+  // builder is locked to one of two environments, decided by the sidebar tab
+  // (new) or the hook's existing trigger (editing). 'job' = replay-only,
+  // 'hook' = listen-only (polling/CDC). they never share trigger UI
   const [builderKind, setBuilderKind] = useState<'job' | 'hook'>('job');
   const [triggerKind, setTriggerKind] = useState<'replay' | 'watch' | 'cdc'>('replay');
   const [watchStrategy, setWatchStrategy] = useState<
@@ -143,7 +143,7 @@ export function HookBuilder() {
   const [cdcOps, setCdcOps] = useState<Set<'insert' | 'update' | 'delete'>>(
     new Set(['insert', 'update', 'delete']),
   );
-  const [readiness, setReadiness] = useState<import('@relay/core').CdcReadiness | null>(null);
+  const [readiness, setReadiness] = useState<import('@data-bridge/core').CdcReadiness | null>(null);
   const [checkingCdc, setCheckingCdc] = useState(false);
 
   // ----- payload / destination / delivery -----
@@ -180,7 +180,7 @@ export function HookBuilder() {
   const pk = useMemo(() => browse?.primaryKey ?? [], [browse]);
   const singlePk = pk.length === 1 ? pk[0]! : null;
 
-  /* Populate from an existing hook or a seed when opened. */
+  /* populate from an existing hook or a seed when opened */
   useEffect(() => {
     if (!hookEditor.open) return;
     if (editing) {
@@ -192,7 +192,7 @@ export function HookBuilder() {
       return;
     }
     reset();
-    // New items belong to the active sidebar tab's environment.
+    // new items belong to the active sidebar tab's environment
     const kind = automationTab === 'hooks' ? 'hook' : 'job';
     setBuilderKind(kind);
     setTriggerKind(kind === 'hook' ? 'watch' : 'replay');
@@ -207,9 +207,9 @@ export function HookBuilder() {
   }, [hookEditor.open, editing, hookEditor.seed]);
 
   /*
-   * Whenever a (new) table's columns load, include ALL of them by default.
-   * Keyed on the column signature so switching between tables — even ones with
-   * the same column count — re-initializes. When editing a hook that pinned a
+   * whenever a (new) table's columns load, include ALL of them by default.
+   * keyed on the column signature so switching between tables (even ones with
+   * the same column count) re-initializes. when editing a hook that pinned a
    * subset, `pendingFields` is applied once instead.
    */
   const colSig = columns.map((c) => c.name).join(' ');
@@ -251,7 +251,7 @@ export function HookBuilder() {
     setDelivery(blankDelivery());
   }
 
-  function loadHook(h: import('@relay/core').Hook) {
+  function loadHook(h: import('@data-bridge/core').Hook) {
     setName(h.name);
     setConnectionId(h.source.connectionId);
     setDatabase(h.source.database ?? '');
@@ -268,7 +268,7 @@ export function HookBuilder() {
         );
       }
     }
-    // Applied when the table's columns load (subset = pinned fields; none = all).
+    // applied when the table's columns load (subset = pinned fields, none = all)
     setFieldsPref(h.transform.fields ?? null);
     setWrapKey(h.transform.wrapKey ?? '');
     if (h.trigger.kind === 'watch') {
@@ -315,7 +315,7 @@ export function HookBuilder() {
     });
   }
 
-  /* The row used to preview the payload: a selected one if available, else first. */
+  /* row used to preview the payload: a selected one if available, else first */
   const sampleRow = useMemo(() => {
     if (mode === 'selected' && singlePk) {
       const hit = rows.find((r) => selectedKeys.has(String(r[singlePk])));
@@ -329,7 +329,7 @@ export function HookBuilder() {
     [columns, included],
   );
 
-  /* Live payload: schema (field → type) + a real sample body. */
+  /* live payload: schema (field → type) + a real sample body */
   const preview = useMemo(() => {
     if (!sampleRow || includedList.length === 0) return null;
     const schemaShape: Record<string, string> = {};
@@ -534,7 +534,7 @@ export function HookBuilder() {
 
   return (
     <div className="bg-background fixed inset-0 z-40 flex flex-col">
-      {/* Top bar */}
+      {/* top bar */}
       <div className="flex items-center gap-3 border-b px-4 py-2.5">
         <Webhook className="text-primary h-5 w-5" />
         <Input
@@ -575,7 +575,7 @@ export function HookBuilder() {
       </div>
 
       <ResizablePanelGroup direction="horizontal" className="min-h-0 flex-1">
-        {/* ---- Source / grid ---- */}
+        {/* ---- source / grid ---- */}
         <ResizablePanel defaultSize={64} minSize={40}>
           <div className="flex h-full flex-col">
             {/* source pickers */}
@@ -729,7 +729,7 @@ export function HookBuilder() {
               )}
             </div>
 
-            {/* Hook-mode preview banner */}
+            {/* hook-mode preview banner */}
             {builderKind === 'hook' && table && (
               <div className="flex items-start gap-2 border-b bg-blue-50 px-3 py-2 text-xs text-blue-700 dark:bg-blue-950/30 dark:text-blue-300">
                 <Radio className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -899,11 +899,11 @@ export function HookBuilder() {
 
         <ResizableHandle />
 
-        {/* ---- Config ---- */}
+        {/* ---- config ---- */}
         <ResizablePanel defaultSize={36} minSize={26}>
           <div className="h-full overflow-y-auto">
             <div className="space-y-5 p-4">
-              {/* Trigger — hooks only; jobs are always a one-shot replay. */}
+              {/* trigger, hooks only. jobs are always a one-shot replay */}
               {builderKind === 'hook' && (
                 <section className="space-y-2">
                   <h3 className="text-sm font-semibold">How it listens</h3>
@@ -953,7 +953,7 @@ export function HookBuilder() {
                       ))}
                     </div>
 
-                    {/* Readiness / setup */}
+                    {/* readiness / setup */}
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground text-[11px]">
                         Streams changes from the DB log in real time (no polling).
@@ -1095,7 +1095,7 @@ export function HookBuilder() {
                 </section>
               )}
 
-              {/* Payload */}
+              {/* payload */}
               <section>
                 <h3 className="mb-2 text-sm font-semibold">What gets sent</h3>
                 <div className="grid grid-cols-2 gap-2">
@@ -1139,7 +1139,7 @@ export function HookBuilder() {
                 )}
               </section>
 
-              {/* Destination */}
+              {/* destination */}
               <section className="space-y-2">
                 <h3 className="text-sm font-semibold">Destination</h3>
                 <div className="grid grid-cols-[90px_1fr] gap-2">
@@ -1298,7 +1298,7 @@ export function HookBuilder() {
                 </label>
               </section>
 
-              {/* Delivery */}
+              {/* delivery */}
               <section className="space-y-2">
                 <h3 className="text-sm font-semibold">Delivery</h3>
                 <div className="grid grid-cols-2 gap-2">
@@ -1339,7 +1339,7 @@ export function HookBuilder() {
                     }
                   />
                 </div>
-                {/* On-failure abort is a job concept — a listener must never stop on one bad delivery. */}
+                {/* on-failure abort is a job concept. a listener must never stop on one bad delivery */}
                 {builderKind === 'job' && (
                   <div className="grid gap-1.5">
                     <Label className="text-xs">On failure</Label>

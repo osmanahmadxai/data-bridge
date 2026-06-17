@@ -1,7 +1,7 @@
 /**
  * Redis adapter. Redis has no tables, so we model the keyspace as a single
- * virtual relation ("keys") whose rows are { key, type, ttl, value }. The query
- * editor accepts raw Redis commands, one per line.
+ * virtual relation ("keys") whose rows are { key, type, ttl, value }. the query
+ * editor takes raw Redis commands, one per line
  */
 import Redis from 'ioredis';
 import type {
@@ -100,7 +100,7 @@ export class RedisAdapter implements DatabaseAdapter {
   }
 
   async listDatabases(): Promise<string[]> {
-    // Redis exposes a fixed set of numbered logical databases.
+    // Redis exposes a fixed set of numbered logical databases
     return Array.from({ length: 16 }, (_, i) => `db${i}`);
   }
 
@@ -287,7 +287,7 @@ export class RedisAdapter implements DatabaseAdapter {
     return writeResult(removed, 'del');
   }
 
-  /* ----- schema management: not applicable to a key-value store ----- */
+  /* ----- schema management: doesn't apply to a key-value store ----- */
 
   private ddlUnsupported(): never {
     throw new UnsupportedError('Redis does not support tables or databases.');
@@ -327,7 +327,7 @@ export class RedisAdapter implements DatabaseAdapter {
 
     const rows = await Promise.all(keys.map((k) => this.readKey(client, k)));
     const doc: BackupDocument = {
-      relay: 'backup',
+      dataBridge: 'backup',
       version: 1,
       engine: this.engine,
       database: `db${this.config.options?.db ?? this.config.database ?? 0}`,
@@ -354,8 +354,8 @@ export class RedisAdapter implements DatabaseAdapter {
     } catch {
       throw new BadRequestError('Backup file is not valid JSON');
     }
-    if (doc.relay !== 'backup' || !Array.isArray(doc.tables)) {
-      throw new BadRequestError('Not a Relay backup file');
+    if (doc.dataBridge !== 'backup' || !Array.isArray(doc.tables)) {
+      throw new BadRequestError('Not a Data Bridge backup file');
     }
     const client = this.getClient();
     if (client.status !== 'ready') await client.connect().catch(() => {});

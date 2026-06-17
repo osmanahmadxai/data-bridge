@@ -1,14 +1,13 @@
 /**
- * Core adapter contract.
+ * core adapter contract.
  *
- * Every database engine Relay supports — relational, document, key-value, or
- * anything added later — implements {@link DatabaseAdapter}. The rest of the
- * application (API routes, UI) depends ONLY on these types, never on a concrete
- * driver. Adding a new engine therefore means: implement this interface and
- * register it. Nothing else changes.
+ * every database engine Data Bridge supports (relational, document, key-value,
+ * or anything added later) implements {@link DatabaseAdapter}. the rest of the
+ * app (API routes, UI) depends ONLY on these types, never on a concrete driver.
+ * so adding a new engine means: implement this interface and register it, that's it.
  *
- * This module is intentionally framework-agnostic: no Next.js, React, or Node
- * server imports. It is pure domain logic and is unit-testable in isolation.
+ * this module is intentionally framework-agnostic: no Next.js, React, or Node
+ * server imports. pure domain logic, unit-testable in isolation
  */
 
 export type DatabaseEngine =
@@ -19,76 +18,76 @@ export type DatabaseEngine =
   | 'redis'
   | 'mssql';
 
-/** The query dialect an engine exposes to the editor surface. */
+/** the query dialect an engine exposes to the editor surface */
 export type QueryLanguage = 'sql' | 'mongo' | 'redis' | 'none';
 
 /**
- * Declarative description of what an engine can do. The UI reads these to
+ * declarative description of what an engine can do. the UI reads these to
  * enable/disable features (e.g. hide the ER diagram tab for Redis) instead of
- * branching on the engine name everywhere.
+ * branching on the engine name all over the place
  */
 export interface AdapterCapabilities {
-  /** Supports arbitrary user-authored queries in the editor. */
+  /** supports arbitrary user-authored queries in the editor */
   query: boolean;
-  /** The language the query editor should use. */
+  /** the language the query editor should use */
   queryLanguage: QueryLanguage;
-  /** Has a schema/namespace layer above tables (e.g. Postgres schemas). */
+  /** has a schema/namespace layer above tables (e.g. Postgres schemas) */
   schemas: boolean;
-  /** Supports multiple databases/catalogs on one connection. */
+  /** supports multiple databases/catalogs on one connection */
   multipleDatabases: boolean;
-  /** Exposes foreign-key relationships (drives the ER diagram). */
+  /** exposes foreign-key relationships (drives the ER diagram) */
   foreignKeys: boolean;
-  /** Supports row-level insert/update/delete through the data grid. */
+  /** supports row-level insert/update/delete through the data grid */
   rowEditing: boolean;
-  /** Whether transactions are available for batched mutations. */
+  /** whether transactions are available for batched mutations */
   transactions: boolean;
-  /** Supports creating / dropping / truncating tables (or collections). */
+  /** supports creating / dropping / truncating tables (or collections) */
   ddl: boolean;
-  /** Supports creating / dropping databases on this connection. */
+  /** supports creating / dropping databases on this connection */
   manageDatabases: boolean;
-  /** Backup/restore formats this engine can produce/consume. */
+  /** backup/restore formats this engine can produce/consume */
   backupFormats: BackupFormat[];
 }
 
 /* -------------------------------------------------------------------------- */
-/* Connection configuration                                                   */
+/* connection configuration                                                   */
 /* -------------------------------------------------------------------------- */
 
 /**
- * A saved connection. Engine-specific validation happens in each adapter; the
+ * a saved connection. engine-specific validation happens in each adapter; the
  * shared shape keeps the store and UI uniform. `password` is only ever present
- * in decrypted form inside the server process — it is encrypted at rest.
+ * in decrypted form inside the server process, it's encrypted at rest
  */
 export interface ConnectionConfig {
   id: string;
   name: string;
   engine: DatabaseEngine;
-  /** Optional accent color for the UI (hex). */
+  /** optional accent color for the UI (hex) */
   color?: string;
   host?: string;
   port?: number;
   user?: string;
   password?: string;
-  /** Database name, or file path for SQLite. */
+  /** database name, or file path for SQLite */
   database?: string;
-  /** Use TLS. Engine adapters interpret the specifics. */
+  /** use TLS. engine adapters interpret the specifics */
   ssl?: boolean;
-  /** Full connection URI; when present, takes precedence over discrete fields. */
+  /** full connection URI; when present, takes precedence over discrete fields */
   connectionString?: string;
-  /** Free-form engine-specific options (e.g. Mongo authSource, Redis db index). */
+  /** free-form engine-specific options (e.g. Mongo authSource, Redis db index) */
   options?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
 }
 
-/** A connection without the assigned id / timestamps (creation payload). */
+/** a connection without the assigned id / timestamps (creation payload) */
 export type ConnectionInput = Omit<
   ConnectionConfig,
   'id' | 'createdAt' | 'updatedAt'
 >;
 
 /* -------------------------------------------------------------------------- */
-/* Schema introspection                                                       */
+/* schema introspection                                                       */
 /* -------------------------------------------------------------------------- */
 
 export interface ColumnSchema {
@@ -100,7 +99,7 @@ export interface ColumnSchema {
   isAutoIncrement: boolean;
   defaultValue: string | null;
   comment: string | null;
-  /** Outbound foreign-key target, if this column references another table. */
+  /** outbound foreign-key target, if this column references another table */
   references: {
     schema?: string;
     table: string;
@@ -143,7 +142,7 @@ export interface TableSchema {
 }
 
 export interface SchemaNamespace {
-  /** Schema/namespace name. Empty string for engines without a schema layer. */
+  /** schema/namespace name. empty string for engines without a schema layer */
   name: string;
   tables: TableSchema[];
 }
@@ -154,7 +153,7 @@ export interface DatabaseSchema {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Query + browse                                                             */
+/* query + browse                                                             */
 /* -------------------------------------------------------------------------- */
 
 export interface QueryColumn {
@@ -165,15 +164,15 @@ export interface QueryColumn {
 export interface QueryResult {
   columns: QueryColumn[];
   rows: Array<Record<string, unknown>>;
-  /** Rows returned for reads; affected rows for writes. */
+  /** rows returned for reads; affected rows for writes */
   rowCount: number;
   affectedRows?: number;
   executionMs: number;
-  /** True when the result was capped by the configured row limit. */
+  /** true when the result was capped by the configured row limit */
   truncated?: boolean;
-  /** Statement kind / operation name, e.g. "SELECT" or "find". */
+  /** statement kind / operation name, e.g. "SELECT" or "find" */
   command?: string;
-  /** Informational message from the engine (notices, warnings). */
+  /** informational message from the engine (notices, warnings) */
   notice?: string;
 }
 
@@ -214,20 +213,20 @@ export interface BrowseParams {
 }
 
 export interface BrowseResult extends QueryResult {
-  /** Total rows matching the filter, or null when too expensive to compute. */
+  /** total rows matching the filter, or null when too expensive to compute */
   total: number | null;
-  /** True when `total` is an approximate catalog estimate, not an exact count. */
+  /** true when `total` is an approximate catalog estimate, not an exact count */
   estimated?: boolean;
-  /** True when more rows exist beyond this page (from a `limit + 1` probe). */
+  /** true when more rows exist beyond this page (from a `limit + 1` probe) */
   hasMore: boolean;
   primaryKey: string[];
 }
 
 /* -------------------------------------------------------------------------- */
-/* Mutations                                                                  */
+/* mutations                                                                  */
 /* -------------------------------------------------------------------------- */
 
-/** Column → value map identifying a single row (its primary key). */
+/** column → value map identifying a single row (its primary key) */
 export type RowIdentity = Record<string, unknown>;
 
 export interface InsertRowParams {
@@ -250,18 +249,18 @@ export interface DeleteRowParams {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Schema management (DDL)                                                     */
+/* schema management (DDL)                                                     */
 /* -------------------------------------------------------------------------- */
 
 export interface ColumnDefinition {
   name: string;
-  /** Raw column type for the engine, e.g. "varchar(255)", "int", "text". */
+  /** raw column type for the engine, e.g. "varchar(255)", "int", "text" */
   type: string;
   nullable: boolean;
   primaryKey: boolean;
   autoIncrement: boolean;
   unique?: boolean;
-  /** Raw default expression, e.g. "0", "now()", "'pending'". */
+  /** raw default expression, e.g. "0", "now()", "'pending'" */
   defaultValue?: string;
 }
 
@@ -272,26 +271,26 @@ export interface CreateTableSpec {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Backup & restore                                                           */
+/* backup & restore                                                           */
 /* -------------------------------------------------------------------------- */
 
 /**
- * `json` — portable, engine-agnostic dump (schema + data) that any engine can
+ * `json`: portable, engine-agnostic dump (schema + data) that any engine can
  * read back, with parameterized inserts on restore.
- * `sql`  — a `.sql` script of DDL + INSERT statements (relational engines only).
+ * `sql`: a `.sql` script of DDL + INSERT statements (relational engines only)
  */
 export type BackupFormat = 'json' | 'sql';
 
 export interface BackupOptions {
   format: BackupFormat;
-  /** Restrict to these relations; defaults to every table in the database. */
+  /** restrict to these relations; defaults to every table in the database */
   tables?: string[];
   schema?: string;
 }
 
-/** The portable JSON backup shape (also embedded inside `json` dumps). */
+/** the portable JSON backup shape (also embedded inside `json` dumps) */
 export interface BackupDocument {
-  relay: 'backup';
+  dataBridge: 'backup';
   version: 1;
   engine: DatabaseEngine;
   database: string;
@@ -311,42 +310,42 @@ export interface RestoreResult {
 }
 
 /* -------------------------------------------------------------------------- */
-/* The adapter                                                                */
+/* the adapter                                                                */
 /* -------------------------------------------------------------------------- */
 
 export interface DatabaseAdapter {
   readonly engine: DatabaseEngine;
   readonly capabilities: AdapterCapabilities;
 
-  /** Establish the underlying connection/pool. Idempotent. */
+  /** establish the underlying connection/pool. idempotent */
   connect(): Promise<void>;
-  /** Lightweight liveness check. */
+  /** lightweight liveness check */
   ping(): Promise<void>;
-  /** Release all resources. */
+  /** release all resources */
   close(): Promise<void>;
 
-  /** List databases/catalogs reachable on this connection. */
+  /** list databases/catalogs reachable on this connection */
   listDatabases(): Promise<string[]>;
-  /** Introspect the full schema of the active (or given) database. */
+  /** introspect the full schema of the active (or given) database */
   getSchema(database?: string): Promise<DatabaseSchema>;
 
-  /** Paginated, filtered, sorted read of a single relation. */
+  /** paginated, filtered, sorted read of a single relation */
   browse(params: BrowseParams): Promise<BrowseResult>;
-  /** Execute a user-authored statement in the engine's query language. */
+  /** run a user-authored statement in the engine's query language */
   query(statement: string, params?: unknown[]): Promise<QueryResult>;
 
   insertRow(params: InsertRowParams): Promise<QueryResult>;
   updateRow(params: UpdateRowParams): Promise<QueryResult>;
   deleteRow(params: DeleteRowParams): Promise<QueryResult>;
 
-  /* schema management — guarded by `capabilities.ddl` / `manageDatabases` */
+  /* schema management, guarded by `capabilities.ddl` / `manageDatabases` */
   createDatabase(name: string): Promise<void>;
   dropDatabase(name: string): Promise<void>;
   createTable(spec: CreateTableSpec): Promise<void>;
   dropTable(table: string, schema?: string): Promise<void>;
   truncateTable(table: string, schema?: string): Promise<void>;
 
-  /* backup & restore — guarded by `capabilities.backupFormats` */
+  /* backup & restore, guarded by `capabilities.backupFormats` */
   backup(options: BackupOptions): Promise<string>;
   restore(content: string, format: BackupFormat): Promise<RestoreResult>;
 }

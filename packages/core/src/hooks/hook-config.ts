@@ -1,13 +1,13 @@
 /**
- * Shared Zod schemas + types for automation hooks. Used by the API (validation,
- * persistence) and the web client (forms, preview) — so the contract lives in
- * exactly one place, mirroring `validation.ts`.
+ * shared Zod schemas + types for automation hooks. used by the API (validation,
+ * persistence) and the web client (forms, preview), so the contract lives in
+ * one place, like `validation.ts`
  */
 import { z } from 'zod';
 import { filterSchema, sortSchema } from '../validation';
 
 /* -------------------------------------------------------------------------- */
-/* Source — where rows are read from                                          */
+/* Source, where rows are read from                                           */
 /* -------------------------------------------------------------------------- */
 
 const tableSourceSchema = z.object({
@@ -33,7 +33,7 @@ export const hookSourceSchema = z.discriminatedUnion('kind', [
 ]);
 
 /* -------------------------------------------------------------------------- */
-/* Destination — where rows are sent                                          */
+/* Destination, where rows are sent                                           */
 /* -------------------------------------------------------------------------- */
 
 export const hookAuthSchema = z.discriminatedUnion('type', [
@@ -48,14 +48,14 @@ export const hookDestinationSchema = z.object({
   headers: z.record(z.string(), z.string()).optional(),
   auth: hookAuthSchema.default({ type: 'none' }),
   /**
-   * Add an `Idempotency-Key` header derived from `(runId, sequence)` so the
-   * receiver can dedupe at-least-once redeliveries (see runner docs).
+   * adds an `Idempotency-Key` header derived from `(runId, sequence)` so the
+   * receiver can dedupe at-least-once redeliveries (see runner docs)
    */
   idempotency: z.boolean().default(false),
 });
 
 /* -------------------------------------------------------------------------- */
-/* Transform — how each row becomes a body                                    */
+/* Transform, how each row becomes a body                                     */
 /* -------------------------------------------------------------------------- */
 
 export const hookTransformSchema = z.object({
@@ -66,24 +66,24 @@ export const hookTransformSchema = z.object({
 });
 
 /* -------------------------------------------------------------------------- */
-/* Delivery — pacing, retries, batching                                       */
+/* Delivery, pacing, retries, batching                                        */
 /* -------------------------------------------------------------------------- */
 
 export const hookDeliverySchema = z.object({
-  /** Rows per HTTP request. 1 = strictly one-by-one. */
+  /** rows per HTTP request. 1 = strictly one-by-one */
   batchSize: z.coerce.number().int().min(1).max(1000).default(1),
-  /** Total attempts per request (1 = no retry). */
+  /** total attempts per request (1 = no retry) */
   maxAttempts: z.coerce.number().int().min(1).max(10).default(3),
-  /** Base backoff in ms; doubles each retry up to `backoffMaxMs`. */
+  /** base backoff in ms, doubles each retry up to `backoffMaxMs` */
   backoffMs: z.coerce.number().int().min(0).max(60_000).default(500),
   backoffMaxMs: z.coerce.number().int().min(0).max(300_000).default(30_000),
-  /** Minimum delay between requests (rate limit). */
+  /** minimum delay between requests (rate limit) */
   minDelayMs: z.coerce.number().int().min(0).max(600_000).default(0),
-  /** Per-request timeout. */
+  /** per-request timeout */
   timeoutMs: z.coerce.number().int().min(100).max(120_000).default(15_000),
-  /** Rows fetched per page from a table source. */
+  /** rows fetched per page from a table source */
   pageSize: z.coerce.number().int().min(1).max(1000).default(200),
-  /** Whether a failed delivery aborts the run or is logged and skipped. */
+  /** whether a failed delivery aborts the run, or is logged and skipped */
   onError: z.enum(['continue', 'abort']).default('continue'),
 });
 
@@ -92,15 +92,15 @@ export const hookDeliverySchema = z.object({
 /* -------------------------------------------------------------------------- */
 
 /* -------------------------------------------------------------------------- */
-/* Trigger — when the hook runs                                               */
+/* Trigger, when the hook runs                                                */
 /* -------------------------------------------------------------------------- */
 
 export const watchStrategySchema = z.discriminatedUnion('strategy', [
-  // Track a strictly-increasing column (auto-increment id / sequence).
+  // track a strictly-increasing column (auto-increment id / sequence)
   z.object({ strategy: z.literal('increment'), column: z.string().min(1) }),
-  // Track a created_at / updated_at column.
+  // track a created_at / updated_at column
   z.object({ strategy: z.literal('timestamp'), column: z.string().min(1) }),
-  // Diff the set of seen primary keys (for UUID / non-monotonic keys).
+  // diff the set of seen primary keys (for UUID / non-monotonic keys)
   z.object({
     strategy: z.literal('snapshot'),
     maxTracked: z.coerce.number().int().min(100).max(200_000).default(50_000),
@@ -110,22 +110,22 @@ export const watchStrategySchema = z.discriminatedUnion('strategy', [
 export const cdcOperationSchema = z.enum(['insert', 'update', 'delete']);
 
 export const hookTriggerSchema = z.discriminatedUnion('kind', [
-  // Run on demand (replay the source when you press Run).
+  // run on demand (replay the source when you press Run)
   z.object({ kind: z.literal('replay') }),
-  // Continuously poll the source for new rows and deliver them live.
+  // continuously poll the source for new rows and deliver them live
   z.object({
     kind: z.literal('watch'),
     strategy: watchStrategySchema,
     pollIntervalMs: z.coerce.number().int().min(1000).max(3_600_000).default(5000),
-    /** `now` ignores existing rows and only delivers ones added after start. */
+    /** `now` ignores existing rows, only delivers ones added after start */
     startFrom: z.enum(['beginning', 'now']).default('now'),
-    /** Max rows delivered per poll cycle (backpressure). */
+    /** max rows delivered per poll cycle (backpressure) */
     maxPerPoll: z.coerce.number().int().min(1).max(5000).default(500),
   }),
-  // Event-based: stream changes from the database's change log (CDC).
-  // Real-time, no polling. Mechanism depends on the engine: Postgres logical
+  // event-based: stream changes from the database's change log (CDC).
+  // real-time, no polling. mechanism depends on the engine: Postgres logical
   // replication, MySQL binlog, MongoDB change streams, or Redis keyspace
-  // notifications. Requirements (and a readiness probe) are surfaced per engine;
+  // notifications. requirements (and a readiness probe) are surfaced per engine,
   // any server-side objects (e.g. Postgres publication/slot) are auto-provisioned.
   z.object({
     kind: z.literal('cdc'),
@@ -144,27 +144,27 @@ export const hookInputSchema = z.object({
 });
 
 export const hookPreviewSchema = z.object({
-  /** Render against this row instead of fetching from the source. */
+  /** render against this row instead of fetching from the source */
   sampleRow: z.record(z.string(), z.unknown()).optional(),
-  /** When no sampleRow is given, fetch this many rows from the source. */
+  /** when no sampleRow is given, fetch this many rows from the source */
   limit: z.coerce.number().int().min(1).max(10).default(3),
 });
 
 export const startRunSchema = z.object({
-  /** Resume a previously interrupted run instead of starting fresh. */
+  /** resume a previously interrupted run instead of starting fresh */
   resumeRunId: z.string().optional(),
-  /** Start a specific prepared (draft) run. */
+  /** start a specific prepared (draft) run */
   runId: z.string().optional(),
-  /** Create a new run that re-sends only the failed rows of this run. */
+  /** create a new run that re-sends only the failed rows of this run */
   retryFailedOf: z.string().optional(),
 });
 
 export const skipSchema = z.object({
-  /** Delivery sequence numbers to skip (only effective while still queued). */
+  /** delivery sequence numbers to skip (only effective while still queued) */
   sequences: z.array(z.coerce.number().int().min(0)).min(1).max(10_000),
 });
 
-/** Check whether a connection+table can do event-based (CDC) delivery. */
+/** check whether a connection+table can do event-based (CDC) delivery */
 export const cdcReadinessSchema = z.object({
   connectionId: z.string().min(1),
   database: z.string().optional(),
@@ -173,7 +173,7 @@ export const cdcReadinessSchema = z.object({
 });
 
 /* -------------------------------------------------------------------------- */
-/* Inferred types + DTOs surfaced to the web client                           */
+/* inferred types + DTOs surfaced to the web client                           */
 /* -------------------------------------------------------------------------- */
 
 export type HookSource = z.infer<typeof hookSourceSchema>;
@@ -187,15 +187,15 @@ export type CdcOperation = z.infer<typeof cdcOperationSchema>;
 export type CdcReadinessDTO = z.infer<typeof cdcReadinessSchema>;
 export type HookInputDTO = z.infer<typeof hookInputSchema>;
 
-/** Result of a CDC readiness probe — drives the builder's setup panel. */
+/** result of a CDC readiness probe, drives the builder's setup panel */
 export interface CdcReadiness {
   engine: string;
-  /** Whether this engine has an event-based path implemented at all. */
+  /** whether this engine has an event-based path implemented at all */
   supported: boolean;
-  /** Whether the DB is configured and ready to stream right now. */
+  /** whether the DB is configured and ready to stream right now */
   ready: boolean;
   checks: { label: string; ok: boolean; detail?: string }[];
-  /** Manual steps the user must do (e.g. set wal_level=logical + restart). */
+  /** manual steps the user must do (e.g. set wal_level=logical + restart) */
   instructions: string[];
 }
 export type HookPreviewDTO = z.infer<typeof hookPreviewSchema>;
@@ -203,19 +203,19 @@ export type StartRunDTO = z.infer<typeof startRunSchema>;
 export type SkipDTO = z.infer<typeof skipSchema>;
 
 export type HookRunStatus =
-  | 'draft' // prepared & queued in the UI, not yet sending
+  | 'draft' // prepared & queued in the UI, not sending yet
   | 'queued'
   | 'running'
   | 'completed'
   | 'failed'
   | 'canceling'
   | 'canceled'
-  | 'paused' // stopped by the user; resumable in place (same run)
+  | 'paused' // stopped by the user, resumable in place (same run)
   | 'interrupted';
 
 export type DeliveryStatus = 'success' | 'failed' | 'skipped';
 
-/** The hook as returned by the API (secret redacted). */
+/** the hook as returned by the API (secret redacted) */
 export interface Hook {
   id: string;
   name: string;
@@ -238,7 +238,7 @@ export interface HookRun {
   failedCount: number;
   skippedCount: number;
   totalCount: number | null;
-  /** Batch size from the config snapshot used to create this run. */
+  /** batch size from the config snapshot used to create this run */
   batchSize: number;
   error: string | null;
   startedAt: string;
@@ -255,23 +255,23 @@ export interface HookDelivery {
   httpStatus: number | null;
   attempts: number;
   error: string | null;
-  /** The exact JSON body sent for this delivery (capped). */
+  /** the exact JSON body sent for this delivery (capped) */
   requestBody: string | null;
-  /** The full response text returned by the endpoint (capped). */
+  /** the full response text returned by the endpoint (capped) */
   responseBody: string | null;
   durationMs: number | null;
   createdAt: string;
 }
 
-/** Result of the preview endpoint: rendered bodies + resolved request shape. */
+/** result of the preview endpoint: rendered bodies + resolved request shape */
 export interface HookPreview {
   method: string;
   url: string;
-  /** Headers with any auth secret redacted. */
+  /** headers with any auth secret redacted */
   headers: Record<string, string>;
-  /** One rendered body per sample row (or per batch when batched). */
+  /** one rendered body per sample row (or per batch when batched) */
   bodies: unknown[];
   warnings: string[];
-  /** True when the rows came from the live source rather than a sample. */
+  /** true when the rows came from the live source rather than a sample */
   fromSource: boolean;
 }

@@ -22,7 +22,7 @@ describe('SqliteAdapter', () => {
   let file: string;
 
   beforeEach(async () => {
-    file = join(tmpdir(), `relay-test-${Date.now()}-${Math.random()}.db`);
+    file = join(tmpdir(), `data-bridge-test-${Date.now()}-${Math.random()}.db`);
     adapter = new SqliteAdapter(makeConfig(file));
     await adapter.connect();
     await adapter.query(
@@ -87,8 +87,8 @@ describe('SqliteAdapter', () => {
   });
 
   it('is immune to SQL injection via filter values (parameterized)', async () => {
-    // A classic injection payload must be treated as a literal string value,
-    // not executed. The table must survive and simply match zero rows.
+    // a classic injection payload should be treated as a literal string value,
+    // not executed. the table must survive and just match zero rows
     const result = await adapter.browse({
       table: 'users',
       limit: 10,
@@ -99,7 +99,7 @@ describe('SqliteAdapter', () => {
     });
     expect(result.rows).toHaveLength(0);
 
-    // Proof the table still exists and is intact.
+    // proof the table still exists and is intact
     const after = await adapter.browse({ table: 'users', limit: 10, offset: 0 });
     expect(after.total).toBe(2);
   });

@@ -6,16 +6,16 @@ import {
   Logger,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { AppError } from '@relay/core';
+import { AppError } from '@data-bridge/core';
 
 /**
- * Maps domain {@link AppError}s (and any uncaught error) to a consistent JSON
+ * maps domain {@link AppError}s (and any uncaught error) to a consistent JSON
  * envelope: `{ error: { code, message, details } }`. NestJS HttpExceptions
- * (e.g. validation failures) are passed through with their own status.
+ * (e.g. validation failures) pass through with their own status
  */
 @Catch()
 export class AppExceptionFilter implements ExceptionFilter {
-  private readonly logger = new Logger('Relay');
+  private readonly logger = new Logger('Data Bridge');
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const res = host.switchToHttp().getResponse<Response>();

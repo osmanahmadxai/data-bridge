@@ -4,7 +4,7 @@ import { Toaster } from '@/components/ui/sonner';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Relay — Database Studio',
+  title: 'Data Bridge — Database Studio',
   description:
     'A browser-based, multi-engine database management studio. Connect to PostgreSQL, MySQL, SQLite, MongoDB, Redis and more.',
 };

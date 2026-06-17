@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Loader2, PlugZap } from 'lucide-react';
 import { toast } from 'sonner';
-import type { ConnectionInputDTO, DatabaseEngine } from '@relay/core';
+import type { ConnectionInputDTO, DatabaseEngine } from '@data-bridge/core';
 import { api, ApiError } from '@/lib/api';
 import {
   useCreateConnection,
@@ -47,7 +47,7 @@ export function ConnectionDialog() {
 
   const editing = dialog.editingId;
 
-  // Load existing connection when editing.
+  // load existing connection when editing
   useEffect(() => {
     if (!dialog.open) return;
     if (!editing) {
