@@ -223,4 +223,4 @@ React Flow · Zod · Vitest.
 
 ## License
 
-[MIT](LICENSE) © Osman Ahmad
+[MIT](LICENSE) © Osman Ahmadzai

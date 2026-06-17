@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Data Bridge — connect to any database, browse it, and sync changes to external services.",
-  "author": "Osman Ahmad",
+  "author": "Osman Ahmadzai",
   "license": "MIT",
   "homepage": "https://github.com/ozmanghani/data-bridge#readme",
   "repository": {
