@@ -9,6 +9,7 @@ export * from './errors';
 export * from './validation';
 export * from './hooks';
 export * from './workspace';
+export * from './auth';
 
 // type-only re-exports of the driver metadata (no driver implementations are
 // pulled in, so this stays safe for the browser bundle)

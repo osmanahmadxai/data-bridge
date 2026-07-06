@@ -5,6 +5,8 @@
 
 export type AppErrorCode =
   | 'BAD_REQUEST'
+  | 'UNAUTHORIZED'
+  | 'FORBIDDEN'
   | 'NOT_FOUND'
   | 'CONFLICT'
   | 'CONNECTION_FAILED'
@@ -34,6 +36,20 @@ export class AppError extends Error {
 export class BadRequestError extends AppError {
   constructor(message: string, details?: unknown) {
     super('BAD_REQUEST', message, 400, details);
+  }
+}
+
+/** not authenticated — no valid session. the web app redirects to login on this */
+export class UnauthorizedError extends AppError {
+  constructor(message = 'Authentication required') {
+    super('UNAUTHORIZED', message, 401);
+  }
+}
+
+/** authenticated but not allowed to do this */
+export class ForbiddenError extends AppError {
+  constructor(message = 'Not allowed') {
+    super('FORBIDDEN', message, 403);
   }
 }
 

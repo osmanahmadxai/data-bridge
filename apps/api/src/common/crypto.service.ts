@@ -5,7 +5,13 @@
  * random key generated once and persisted to the data dir with 0600 perms.
  * ciphertext format is "iv:tag:data", all base64
  */
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from 'node:crypto';
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { Injectable, Logger } from '@nestjs/common';
 import { runtimeConfig } from './runtime-config';
@@ -83,4 +89,48 @@ export class CryptoService {
       decipher.final(),
     ]).toString('utf8');
   }
+
+  /**
+   * sign an arbitrary JSON-serializable payload into a compact, tamper-evident
+   * token: `base64url(json).base64url(hmac)`. used for the session cookie — the
+   * master key doubles as the HMAC secret, so no extra key to manage.
+   */
+  signToken(payload: Record<string, unknown>): string {
+    const body = base64url(Buffer.from(JSON.stringify(payload), 'utf8'));
+    return `${body}.${this.hmac(body)}`;
+  }
+
+  /**
+   * verify a token from {@link signToken} and return its payload, or null if the
+   * signature doesn't match or the token is malformed. never throws.
+   */
+  verifyToken<T = Record<string, unknown>>(token: string): T | null {
+    const dot = token.lastIndexOf('.');
+    if (dot < 1) return null;
+    const body = token.slice(0, dot);
+    const sig = token.slice(dot + 1);
+    const expected = this.hmac(body);
+    // constant-time compare so a valid-length forgery can't be timed out
+    if (
+      sig.length !== expected.length ||
+      !timingSafeEqual(Buffer.from(sig), Buffer.from(expected))
+    ) {
+      return null;
+    }
+    try {
+      return JSON.parse(
+        Buffer.from(body.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'),
+      ) as T;
+    } catch {
+      return null;
+    }
+  }
+
+  private hmac(data: string): string {
+    return base64url(createHmac('sha256', this.loadKey()).update(data).digest());
+  }
+}
+
+function base64url(buf: Buffer): string {
+  return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }

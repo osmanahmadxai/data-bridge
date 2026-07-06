@@ -6,7 +6,7 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { createAdapter } from '@data-bridge/core/adapters';
 import type { ConnectionConfig, DatabaseAdapter } from '@data-bridge/core';
-import { runtimeConfig } from '../common/runtime-config';
+import { SettingsStoreService } from '../settings/settings-store.service';
 import { ConnectionStoreService } from './connection-store.service';
 
 interface PoolEntry {
@@ -22,11 +22,13 @@ export class AdapterPoolService implements OnModuleDestroy {
   private readonly pending = new Map<string, Promise<DatabaseAdapter>>();
   private readonly sweepTimer: NodeJS.Timeout;
 
-  constructor(private readonly store: ConnectionStoreService) {
-    this.sweepTimer = setInterval(
-      () => this.sweep(),
-      Math.max(runtimeConfig.poolIdleMs / 2, 30_000),
-    );
+  constructor(
+    private readonly store: ConnectionStoreService,
+    private readonly settings: SettingsStoreService,
+  ) {
+    // fixed sweep cadence; the idle threshold itself is read live from settings
+    // each sweep, so changing it in the UI takes effect without a restart
+    this.sweepTimer = setInterval(() => this.sweep(), 30_000);
     this.sweepTimer.unref?.();
   }
 
@@ -40,8 +42,9 @@ export class AdapterPoolService implements OnModuleDestroy {
 
   private sweep(): void {
     const now = Date.now();
+    const idleMs = this.settings.snapshot().poolIdleMs;
     for (const [id, entry] of this.entries) {
-      if (now - entry.lastUsedAt > runtimeConfig.poolIdleMs) {
+      if (now - entry.lastUsedAt > idleMs) {
         void entry.adapter.close().catch(() => {});
         this.entries.delete(id);
       }
