@@ -30,8 +30,12 @@ import type {
   CdcStreamHandle,
 } from '../cdc-provider';
 
-/** events that mean the key is gone. everything else is treated as a write */
-const DELETE_EVENTS = new Set(['del', 'unlink', 'expired', 'evicted', 'expire']);
+/**
+ * events that mean the key is gone. everything else is treated as a write.
+ * note `expire` (setting a TTL, key still live) is NOT here — only `expired`
+ * (the TTL actually fired and removed the key) is a delete.
+ */
+const DELETE_EVENTS = new Set(['del', 'unlink', 'expired', 'evicted']);
 
 @Injectable()
 export class RedisCdcProvider implements CdcProvider {
@@ -44,6 +48,17 @@ export class RedisCdcProvider implements CdcProvider {
   }
 
   private dbIndex(conn: ConnectionConfig): number {
+    // a connection string may select the db in its path (redis://host:6379/2);
+    // ioredis honors it, so the keyevent channel must match it too
+    if (conn.connectionString) {
+      try {
+        const path = new URL(conn.connectionString).pathname.replace(/^\//, '');
+        const fromPath = Number(path);
+        if (path && Number.isFinite(fromPath)) return fromPath;
+      } catch {
+        /* unparseable, fall through to the discrete fields */
+      }
+    }
     const idx = Number(conn.options?.db ?? conn.database ?? 0);
     return Number.isFinite(idx) ? idx : 0;
   }
