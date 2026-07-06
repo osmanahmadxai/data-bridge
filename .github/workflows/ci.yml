@@ -13,15 +13,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # no `version:` here — the version is pinned by "packageManager" in
+      # package.json; specifying both makes action-setup fail on a mismatch
       - name: Install pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
 
       - name: Install dependencies
