@@ -1,5 +1,10 @@
 /** PostgreSQL adapter backed by `pg` with a per-connection pool */
-import { Pool, type PoolConfig, type QueryResult as PgResult } from 'pg';
+import {
+  Pool,
+  type PoolClient,
+  type PoolConfig,
+  type QueryResult as PgResult,
+} from 'pg';
 import type {
   AdapterCapabilities,
   ColumnSchema,
@@ -12,7 +17,10 @@ import type {
   TableSchema,
 } from '../types';
 import { ConnectionError, QueryError } from '../../errors';
-import { BaseSqlAdapter } from './base-sql-adapter';
+import {
+  BaseSqlAdapter,
+  type SqlTransactionConnection,
+} from './base-sql-adapter';
 
 export const POSTGRES_CAPABILITIES: AdapterCapabilities = {
   query: true,
@@ -111,7 +119,7 @@ export class PostgresAdapter extends BaseSqlAdapter {
     return value ? 'TRUE' : 'FALSE';
   }
 
-  protected override async runSql(
+  protected override async execPooled(
     sql: string,
     params: unknown[],
   ): Promise<QueryResult> {
@@ -120,26 +128,38 @@ export class PostgresAdapter extends BaseSqlAdapter {
       const raw = (await this.getPool().query(sql, params)) as
         | PgResult
         | PgResult[];
-      const executionMs = Math.round(performance.now() - started);
-      // a multi-statement query makes `pg` return an ARRAY of results, one per
-      // statement — report the last one (matches psql's behavior)
-      const res = Array.isArray(raw) ? raw[raw.length - 1]! : raw;
-      return {
-        columns: (res.fields ?? []).map((f) => ({
-          name: f.name,
-          dataType: String(f.dataTypeID),
-        })),
-        rows: res.rows as Array<Record<string, unknown>>,
-        rowCount: res.rowCount ?? res.rows.length,
-        affectedRows: /^(INSERT|UPDATE|DELETE)/i.test(res.command)
-          ? (res.rowCount ?? 0)
-          : undefined,
-        executionMs,
-        command: res.command,
-      };
+      return normalizePgResult(raw, started);
     } catch (err) {
       throw new QueryError((err as Error).message, { sql });
     }
+  }
+
+  /** borrow a single pooled client and drive BEGIN/COMMIT/ROLLBACK on it */
+  protected override async acquireTransactionConnection(): Promise<SqlTransactionConnection> {
+    const client: PoolClient = await this.getPool().connect();
+    return {
+      run: async (sql, params) => {
+        const started = performance.now();
+        try {
+          const raw = (await client.query(sql, params)) as
+            | PgResult
+            | PgResult[];
+          return normalizePgResult(raw, started);
+        } catch (err) {
+          throw new QueryError((err as Error).message, { sql });
+        }
+      },
+      begin: async () => {
+        await client.query('BEGIN');
+      },
+      commit: async () => {
+        await client.query('COMMIT');
+      },
+      rollback: async () => {
+        await client.query('ROLLBACK');
+      },
+      release: () => client.release(),
+    };
   }
 
   protected override async countRows(args: {
@@ -237,6 +257,30 @@ export class PostgresAdapter extends BaseSqlAdapter {
 }
 
 type Row = Record<string, unknown>;
+
+/** shape a raw `pg` result (or multi-statement array) into a QueryResult */
+function normalizePgResult(
+  raw: PgResult | PgResult[],
+  started: number,
+): QueryResult {
+  const executionMs = Math.round(performance.now() - started);
+  // a multi-statement query makes `pg` return an ARRAY of results, one per
+  // statement — report the last one (matches psql's behavior)
+  const res = Array.isArray(raw) ? raw[raw.length - 1]! : raw;
+  return {
+    columns: (res.fields ?? []).map((f) => ({
+      name: f.name,
+      dataType: String(f.dataTypeID),
+    })),
+    rows: res.rows as Array<Record<string, unknown>>,
+    rowCount: res.rowCount ?? res.rows.length,
+    affectedRows: /^(INSERT|UPDATE|DELETE)/i.test(res.command)
+      ? (res.rowCount ?? 0)
+      : undefined,
+    executionMs,
+    command: res.command,
+  };
+}
 
 function buildSchema(
   database: string,

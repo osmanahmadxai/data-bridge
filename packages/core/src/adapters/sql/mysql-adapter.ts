@@ -1,5 +1,10 @@
 /** MySQL / MariaDB adapter backed by `mysql2` with a per-connection pool */
-import mysql, { type Pool, type RowDataPacket } from 'mysql2/promise';
+import mysql, {
+  type FieldPacket,
+  type Pool,
+  type PoolConnection,
+  type RowDataPacket,
+} from 'mysql2/promise';
 import type {
   AdapterCapabilities,
   ColumnSchema,
@@ -10,7 +15,10 @@ import type {
   TableSchema,
 } from '../types';
 import { ConnectionError, QueryError } from '../../errors';
-import { BaseSqlAdapter } from './base-sql-adapter';
+import {
+  BaseSqlAdapter,
+  type SqlTransactionConnection,
+} from './base-sql-adapter';
 
 /**
  * mysql2 escapes plain objects into `key = 'value'` pairs and arrays into
@@ -131,41 +139,43 @@ export class MysqlAdapter extends BaseSqlAdapter {
     return `ON DUPLICATE KEY UPDATE ${updates.join(', ')}`;
   }
 
-  protected override async runSql(
+  protected override async execPooled(
     sql: string,
     params: unknown[],
   ): Promise<QueryResult> {
-    const started = performance.now();
-    const bound = params.map(coerceMysqlParam);
     try {
-      const [rows, fields] = await this.getPool().query(sql, bound);
-      const executionMs = Math.round(performance.now() - started);
-
-      if (Array.isArray(rows)) {
-        return {
-          columns: (fields ?? []).map((f) => ({
-            name: f.name,
-            dataType: String(f.type),
-          })),
-          rows: rows as Array<Record<string, unknown>>,
-          rowCount: rows.length,
-          executionMs,
-          command: 'SELECT',
-        };
-      }
-
-      const result = rows as { affectedRows?: number };
-      return {
-        columns: [],
-        rows: [],
-        rowCount: result.affectedRows ?? 0,
-        affectedRows: result.affectedRows ?? 0,
-        executionMs,
-        command: sql.trim().split(/\s+/)[0]?.toUpperCase(),
-      };
+      const started = performance.now();
+      const [rows, fields] = await this.getPool().query(
+        sql,
+        params.map(coerceMysqlParam),
+      );
+      return normalizeMysqlResult(sql, rows, fields, started);
     } catch (err) {
       throw new QueryError((err as Error).message, { sql });
     }
+  }
+
+  /** borrow a pooled connection and drive its native transaction API */
+  protected override async acquireTransactionConnection(): Promise<SqlTransactionConnection> {
+    const conn: PoolConnection = await this.getPool().getConnection();
+    return {
+      run: async (sql, params) => {
+        try {
+          const started = performance.now();
+          const [rows, fields] = await conn.query(
+            sql,
+            params.map(coerceMysqlParam),
+          );
+          return normalizeMysqlResult(sql, rows, fields, started);
+        } catch (err) {
+          throw new QueryError((err as Error).message, { sql });
+        }
+      },
+      begin: () => conn.beginTransaction(),
+      commit: () => conn.commit(),
+      rollback: () => conn.rollback(),
+      release: () => conn.release(),
+    };
   }
 
   protected override async countRows(args: {
@@ -311,6 +321,37 @@ export class MysqlAdapter extends BaseSqlAdapter {
       namespaces: [{ name: '', tables: [...tableMap.values()] }],
     };
   }
+}
+
+/** shape a raw `mysql2` query response into a normalized QueryResult */
+function normalizeMysqlResult(
+  sql: string,
+  rows: unknown,
+  fields: FieldPacket[] | undefined,
+  started: number,
+): QueryResult {
+  const executionMs = Math.round(performance.now() - started);
+  if (Array.isArray(rows)) {
+    return {
+      columns: (fields ?? []).map((f) => ({
+        name: f.name,
+        dataType: String(f.type),
+      })),
+      rows: rows as Array<Record<string, unknown>>,
+      rowCount: rows.length,
+      executionMs,
+      command: 'SELECT',
+    };
+  }
+  const result = rows as { affectedRows?: number };
+  return {
+    columns: [],
+    rows: [],
+    rowCount: result.affectedRows ?? 0,
+    affectedRows: result.affectedRows ?? 0,
+    executionMs,
+    command: sql.trim().split(/\s+/)[0]?.toUpperCase(),
+  };
 }
 
 /**
