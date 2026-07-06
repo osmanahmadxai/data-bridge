@@ -54,26 +54,42 @@ function TableNode({ data }: NodeProps<Node<TableNodeData>>) {
 
 const nodeTypes = { table: TableNode };
 
+/** schema-qualified node id so same-named tables in two schemas don't collide */
+function nodeId(schema: string | undefined, table: string): string {
+  return schema ? `${schema}.${table}` : table;
+}
+
 function buildGraph(schema: DatabaseSchema): { nodes: Node[]; edges: Edge[] } {
   const tables = schema.namespaces.flatMap((ns) => ns.tables);
   const cols = Math.ceil(Math.sqrt(tables.length)) || 1;
 
   const nodes: Node[] = tables.map((table, i) => ({
-    id: table.name,
+    id: nodeId(table.schema, table.name),
     type: 'table',
     position: { x: (i % cols) * 320, y: Math.floor(i / cols) * 280 },
     data: { table },
   }));
 
-  const ids = new Set(tables.map((t) => t.name));
+  const ids = new Set(tables.map((t) => nodeId(t.schema, t.name)));
   const edges: Edge[] = [];
   for (const table of tables) {
+    const source = nodeId(table.schema, table.name);
     for (const fk of table.foreignKeys) {
-      if (!ids.has(fk.referencedTable)) continue;
+      // assume a same-schema reference when the FK doesn't say; fall back to a
+      // unique name match so cross-schema references still connect
+      let target = nodeId(
+        fk.referencedSchema ?? table.schema,
+        fk.referencedTable,
+      );
+      if (!ids.has(target)) {
+        const hit = tables.find((t) => t.name === fk.referencedTable);
+        if (!hit) continue;
+        target = nodeId(hit.schema, hit.name);
+      }
       edges.push({
-        id: `${table.name}-${fk.name}`,
-        source: table.name,
-        target: fk.referencedTable,
+        id: `${source}-${fk.name}`,
+        source,
+        target,
         animated: true,
         label: fk.columns.join(', '),
         style: { stroke: 'hsl(var(--muted-foreground))' },

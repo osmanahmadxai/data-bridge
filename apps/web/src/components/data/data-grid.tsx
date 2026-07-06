@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   ArrowDown,
@@ -26,6 +26,7 @@ import { exportRows } from '@/lib/export';
 import { useBrowse, useConnections, useDrivers } from '@/lib/queries';
 import { useStudio } from '@/lib/store';
 import { cn } from '@/lib/utils';
+import { useConfirm } from '@/components/confirm';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -75,6 +76,7 @@ function formatCell(value: unknown): string {
 export function DataGrid() {
   const { activeConnectionId, activeDatabase, selected } = useStudio();
   const qc = useQueryClient();
+  const confirm = useConfirm();
 
   const { data: connections } = useConnections();
   const { data: drivers } = useDrivers();
@@ -91,6 +93,14 @@ export function DataGrid() {
   );
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
+
+  // sort/filter columns and the page offset belong to the previous table;
+  // reset them whenever the browsed relation changes
+  useEffect(() => {
+    setSort([]);
+    setFilters([]);
+    setOffset(0);
+  }, [activeConnectionId, activeDatabase, selected?.schema, selected?.table]);
 
   const params = useMemo(
     () =>
@@ -175,6 +185,13 @@ export function DataGrid() {
   }
 
   async function deleteRow(row: Record<string, unknown>) {
+    const ok = await confirm({
+      title: 'Delete this row?',
+      description: 'This cannot be undone.',
+      confirmText: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       await api.deleteRow(

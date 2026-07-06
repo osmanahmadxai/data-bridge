@@ -33,6 +33,8 @@ export function CreateDatabaseDialog({
   const qc = useQueryClient();
 
   async function handleCreate() {
+    // the Enter-key handler bypasses the button's disabled state
+    if (saving) return;
     if (!name.trim()) return;
     setSaving(true);
     try {
