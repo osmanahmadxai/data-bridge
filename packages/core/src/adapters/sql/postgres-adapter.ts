@@ -32,6 +32,8 @@ export class PostgresAdapter extends BaseSqlAdapter {
   readonly capabilities = POSTGRES_CAPABILITIES;
 
   private pool: Pool | null = null;
+  /** last error emitted by an idle pooled client (kept for diagnostics) */
+  private lastPoolError: Error | null = null;
 
   private getPool(): Pool {
     if (this.pool) return this.pool;
@@ -47,8 +49,19 @@ export class PostgresAdapter extends BaseSqlAdapter {
     cfg.max = 5;
     cfg.idleTimeoutMillis = 30_000;
     cfg.connectionTimeoutMillis = 10_000;
-    if (this.config.ssl) cfg.ssl = { rejectUnauthorized: false };
+    // self-signed certs are the norm for dev databases, so verification is
+    // opt-in: set options.sslVerify to true to enforce a trusted CA chain
+    if (this.config.ssl) {
+      cfg.ssl = { rejectUnauthorized: this.config.options?.sslVerify === true };
+    }
     this.pool = new Pool(cfg);
+    // an idle client losing its connection emits 'error' on the pool; with no
+    // listener Node treats it as an unhandled 'error' event and crashes the
+    // process. core has no logger, so just remember it — the next query will
+    // surface the failure to the caller anyway
+    this.pool.on('error', (err) => {
+      this.lastPoolError = err;
+    });
     return this.pool;
   }
 
@@ -103,26 +116,30 @@ export class PostgresAdapter extends BaseSqlAdapter {
     params: unknown[],
   ): Promise<QueryResult> {
     const started = performance.now();
-    let res: PgResult;
     try {
-      res = await this.getPool().query(sql, params);
+      const raw = (await this.getPool().query(sql, params)) as
+        | PgResult
+        | PgResult[];
+      const executionMs = Math.round(performance.now() - started);
+      // a multi-statement query makes `pg` return an ARRAY of results, one per
+      // statement — report the last one (matches psql's behavior)
+      const res = Array.isArray(raw) ? raw[raw.length - 1]! : raw;
+      return {
+        columns: (res.fields ?? []).map((f) => ({
+          name: f.name,
+          dataType: String(f.dataTypeID),
+        })),
+        rows: res.rows as Array<Record<string, unknown>>,
+        rowCount: res.rowCount ?? res.rows.length,
+        affectedRows: /^(INSERT|UPDATE|DELETE)/i.test(res.command)
+          ? (res.rowCount ?? 0)
+          : undefined,
+        executionMs,
+        command: res.command,
+      };
     } catch (err) {
       throw new QueryError((err as Error).message, { sql });
     }
-    const executionMs = Math.round(performance.now() - started);
-    return {
-      columns: res.fields.map((f) => ({
-        name: f.name,
-        dataType: String(f.dataTypeID),
-      })),
-      rows: res.rows as Array<Record<string, unknown>>,
-      rowCount: res.rowCount ?? res.rows.length,
-      affectedRows: /^(INSERT|UPDATE|DELETE)/i.test(res.command)
-        ? (res.rowCount ?? 0)
-        : undefined,
-      executionMs,
-      command: res.command,
-    };
   }
 
   protected override async countRows(args: {

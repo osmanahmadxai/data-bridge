@@ -182,6 +182,8 @@ export function HookBuilder() {
   const [dest, setDest] = useState<Destination>(blankDestination);
   const [dbTargets, setDbTargets] = useState<DbTarget[]>([blankDbTarget()]);
   const [delivery, setDelivery] = useState<Delivery>(blankDelivery);
+  /** preserved on edit so saving doesn't silently re-enable a disabled bridge */
+  const [enabled, setEnabled] = useState(true);
 
   const { data: connections } = useConnections();
   const { data: databases } = useDatabases(connectionId || null);
@@ -216,12 +218,24 @@ export function HookBuilder() {
   useEffect(() => {
     if (!hookEditor.open) return;
     if (editing) {
-      api.getHook(editing).then(loadHook, (err) =>
-        toast.error('Could not load hook for editing', {
-          description: err instanceof ApiError ? err.message : String(err),
-        }),
+      // start clean, and ignore the response if the editor moved on to a
+      // different hook (or closed) before this load resolved
+      reset();
+      let stale = false;
+      api.getHook(editing).then(
+        (h) => {
+          if (!stale) loadHook(h);
+        },
+        (err) => {
+          if (stale) return;
+          toast.error('Could not load hook for editing', {
+            description: err instanceof ApiError ? err.message : String(err),
+          });
+        },
       );
-      return;
+      return () => {
+        stale = true;
+      };
     }
     reset();
     // a new bridge runs an on-demand job by default; the user can switch it to a
@@ -283,6 +297,7 @@ export function HookBuilder() {
     setDest(blankDestination());
     setDbTargets([blankDbTarget()]);
     setDelivery(blankDelivery());
+    setEnabled(true);
   }
 
   function loadHook(h: import('@data-bridge/core').Hook) {
@@ -367,6 +382,7 @@ export function HookBuilder() {
       timeoutMs: h.delivery.timeoutMs,
       onError: h.delivery.onError,
     });
+    setEnabled(h.enabled);
   }
 
   /* row used to preview the payload: a selected one if available, else first */
@@ -583,7 +599,7 @@ export function HookBuilder() {
                 maxPerPoll: 500,
               }
             : { kind: 'replay' },
-      enabled: true,
+      enabled,
     };
   }
 
@@ -1577,7 +1593,12 @@ function NumField({
         min={min}
         className="h-8"
         value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
+        onChange={(e) => {
+          // a cleared input coerces to 0 — clamp so e.g. batchSize can't be 0
+          const n = Number(e.target.value);
+          const floor = min ?? 0;
+          onChange(Number.isFinite(n) ? Math.max(floor, n) : floor);
+        }}
       />
     </div>
   );

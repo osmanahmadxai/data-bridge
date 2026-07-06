@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Logger,
   Param,
   Post,
   Put,
@@ -19,6 +20,7 @@ import {
   type SkipDTO,
   type CdcReadiness,
   type CdcReadinessDTO,
+  BadRequestError,
   cdcReadinessSchema,
   hookInputSchema,
   hookPreviewSchema,
@@ -29,6 +31,7 @@ import {
 } from '@data-bridge/core';
 import { AdapterPoolService } from '../connections/adapter-pool.service';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
+import { DatabaseSinkService } from './database-sink.service';
 import { DeliveryService } from './delivery.service';
 import { HookCdcService } from './hook-cdc.service';
 import { HookRunService } from './hook-run.service';
@@ -37,6 +40,8 @@ import { HookWatchService } from './hook-watch.service';
 
 @Controller('hooks')
 export class HooksController {
+  private readonly logger = new Logger('Hooks');
+
   constructor(
     private readonly store: HookStoreService,
     private readonly runs: HookRunService,
@@ -44,6 +49,7 @@ export class HooksController {
     private readonly cdc: HookCdcService,
     private readonly pool: AdapterPoolService,
     private readonly delivery: DeliveryService,
+    private readonly databaseSink: DatabaseSinkService,
   ) {}
 
   /* ----- CRUD ----- */
@@ -80,18 +86,54 @@ export class HooksController {
     @Param('id') id: string,
     @Body(new ZodValidationPipe(hookInputSchema)) dto: HookInputDTO,
   ): Promise<Hook> {
+    // stop a live listener BEFORE the config changes, routed by the OLD trigger
+    // kind — routing by the new one after an edit (say cdc → watch) would leave
+    // the old stream running as a zombie, delivering into a finalized run
+    const before = await this.store.get(id);
+    let wasListening = false;
+    if (before.trigger.kind === 'cdc') {
+      wasListening = (await this.cdc.stop(id).catch(() => null)) !== null;
+    } else if (before.trigger.kind === 'watch') {
+      wasListening = (await this.watch.stop(id).catch(() => null)) !== null;
+    }
+
     const hook = await this.store.update(id, dto);
+    // the destination may have changed; drop the sink's ensured-table cache
+    this.databaseSink.forget(id);
     // refresh an existing draft so its queued timeline reflects the new config
     await this.runs.prepare(id, { onlyExisting: true }).catch(() => undefined);
+
+    // it was live when the user hit save, so bring it back up on the new config
+    if (wasListening && hook.enabled) {
+      try {
+        if (hook.trigger.kind === 'cdc') await this.cdc.start(id);
+        else if (hook.trigger.kind === 'watch') await this.watch.start(id);
+      } catch (err) {
+        this.logger.warn(
+          `Bridge ${id} was live but could not restart on the new config (left paused): ${(err as Error).message}`,
+        );
+      }
+    }
     return hook;
   }
 
   @Delete(':id')
   async remove(@Param('id') id: string): Promise<{ id: string }> {
-    // tear down any live listener BEFORE deleting (CDC drops its slot/publication)
-    const hook = await this.store.get(id).catch(() => null);
-    if (hook?.trigger.kind === 'cdc') await this.cdc.cleanup(id).catch(() => undefined);
-    else if (hook?.trigger.kind === 'watch') await this.watch.stop(id).catch(() => undefined);
+    await this.store.get(id); // 404s if missing
+    // tear down BOTH listener kinds before deleting: a hook edited across
+    // trigger kinds may have remnants of either (each is a no-op when idle).
+    // cdc.cleanup also drops the replication slot/publication on the source
+    await this.cdc.cleanup(id).catch(() => undefined);
+    await this.watch.stop(id).catch(() => undefined);
+    // stop any in-flight replay run so the worker doesn't keep delivering
+    // rows for a bridge that no longer exists
+    const runs = await this.runs.listRuns(id).catch(() => [] as HookRun[]);
+    for (const run of runs) {
+      if (run.status === 'queued' || run.status === 'running') {
+        await this.runs.cancel(id, run.id).catch(() => undefined);
+      }
+    }
+    this.databaseSink.forget(id);
     await this.store.remove(id);
     return { id };
   }
@@ -213,8 +255,13 @@ export class HooksController {
 
   @Post(':id/watch/stop')
   async stopWatch(@Param('id') id: string): Promise<HookRun | null> {
-    const hook = await this.store.get(id);
-    return hook.trigger.kind === 'cdc' ? this.cdc.stop(id) : this.watch.stop(id);
+    await this.store.get(id); // 404s if missing
+    // stop BOTH mechanisms, not just the current trigger kind: a hook edited
+    // across kinds may still have the other's listener running. cdc.stop goes
+    // first so the run it finalizes is the one reported back
+    const cdcRun = await this.cdc.stop(id);
+    const watchRun = await this.watch.stop(id);
+    return cdcRun ?? watchRun;
   }
 
   @Get(':id/runs')
@@ -239,16 +286,28 @@ export class HooksController {
   }
 
   @Post(':id/runs/:runId/cancel')
-  cancelRun(
+  async cancelRun(
     @Param('id') id: string,
     @Param('runId') runId: string,
   ): Promise<HookRun> {
+    // listening runs aren't queue jobs: plain cancel would strand them in
+    // 'canceling' while the stream keeps delivering. canceling one means
+    // stopping the listener (the run pauses, keeping its cursor)
+    const hook = await this.store.get(id).catch(() => null);
+    if (hook && (hook.trigger.kind === 'watch' || hook.trigger.kind === 'cdc')) {
+      const run = await this.runs.getRun(id, runId);
+      if (['queued', 'running', 'canceling'].includes(run.status)) {
+        const stopped = (await this.cdc.stop(id)) ?? (await this.watch.stop(id));
+        if (stopped && stopped.id === runId) return stopped;
+      }
+      return this.runs.getRun(id, runId);
+    }
     return this.runs.cancel(id, runId);
   }
 
   @Get(':id/runs/:runId/deliveries')
-  listDeliveries(
-    @Param('id') _id: string,
+  async listDeliveries(
+    @Param('id') id: string,
     @Param('runId') runId: string,
     @Query('status') status?: string,
     @Query('from') from?: string,
@@ -256,23 +315,35 @@ export class HooksController {
     @Query('offset') offset?: string,
     @Query('limit') limit?: string,
   ): Promise<HookDelivery[]> {
+    await this.runs.getRun(id, runId); // 404 unless the run belongs to this hook
     const valid = status === 'success' || status === 'failed' || status === 'skipped';
     return this.runs.listDeliveries(runId, {
       status: valid ? (status as 'success' | 'failed' | 'skipped') : undefined,
-      from: from != null ? Number(from) : undefined,
-      to: to != null ? Number(to) : undefined,
-      offset: offset ? Number(offset) : undefined,
-      limit: limit ? Number(limit) : undefined,
+      from: parseBound('from', from),
+      to: parseBound('to', to),
+      offset: parseBound('offset', offset),
+      limit: parseBound('limit', limit),
     });
   }
 
   @Post(':id/runs/:runId/skip')
   async skip(
-    @Param('id') _id: string,
+    @Param('id') id: string,
     @Param('runId') runId: string,
     @Body(new ZodValidationPipe(skipSchema)) dto: SkipDTO,
   ): Promise<{ skipped: number }> {
+    await this.runs.getRun(id, runId); // 404 unless the run belongs to this hook
     const skipped = await this.runs.skipDeliveries(runId, dto.sequences);
     return { skipped };
   }
+}
+
+/** parse a numeric query param, rejecting NaN/negatives instead of 500ing */
+function parseBound(name: string, value?: string): number | undefined {
+  if (value == null || value === '') return undefined;
+  const n = Math.trunc(Number(value));
+  if (!Number.isInteger(n) || n < 0) {
+    throw new BadRequestError(`Query parameter "${name}" must be a non-negative integer.`);
+  }
+  return n;
 }

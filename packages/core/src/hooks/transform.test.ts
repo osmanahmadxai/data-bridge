@@ -96,6 +96,36 @@ describe('renderRow', () => {
       /not valid JSON/i,
     );
   });
+
+  it('does not resolve inherited names like {{constructor}}', () => {
+    const { body, warnings } = renderRow(
+      { id: 1 },
+      { template: '{"c":"{{constructor}}"}' },
+      ctx,
+    );
+    // `constructor` is not an own property of the scope: unknown token, null
+    expect(body).toEqual({ c: null });
+    expect(warnings).toEqual(['constructor']);
+  });
+
+  it('drops rendered __proto__/constructor/prototype output keys', () => {
+    const { body } = renderRow(
+      { k: '__proto__' },
+      { template: '{"{{k}}":{"polluted":true},"safe":1}' },
+      ctx,
+    );
+    // the dangerous key is skipped entirely; the object is not reparented
+    expect(body).toEqual({ safe: 1 });
+    expect(Object.getPrototypeOf(body)).toBe(Object.prototype);
+    expect(({} as { polluted?: unknown }).polluted).toBeUndefined();
+
+    const { body: b2 } = renderRow(
+      { id: 1 },
+      { template: '{"constructor":1,"prototype":2,"x":3}' },
+      ctx,
+    );
+    expect(b2).toEqual({ x: 3 });
+  });
 });
 
 describe('renderBatch', () => {

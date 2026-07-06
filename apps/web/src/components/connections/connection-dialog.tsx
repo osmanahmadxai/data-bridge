@@ -50,26 +50,35 @@ export function ConnectionDialog() {
   // load existing connection when editing
   useEffect(() => {
     if (!dialog.open) return;
-    if (!editing) {
-      setForm({ name: '' });
-      setEngine('postgres');
-      setSsl(false);
-      return;
-    }
-    void api.getConnection(editing).then((c) => {
-      setEngine(c.engine);
-      setSsl(!!c.ssl);
-      setForm({
-        name: c.name,
-        host: c.host ?? '',
-        port: c.port != null ? String(c.port) : '',
-        user: c.user ?? '',
-        password: c.password ?? '',
-        database: c.database ?? '',
-        connectionString: c.connectionString ?? '',
-      });
-    });
-  }, [dialog.open, editing]);
+    // always start from a clean slate so a failed load can't leave the
+    // previous connection's values behind
+    setForm({ name: '' });
+    setEngine('postgres');
+    setSsl(false);
+    if (!editing) return;
+    void api.getConnection(editing).then(
+      (c) => {
+        setEngine(c.engine);
+        setSsl(!!c.ssl);
+        setForm({
+          name: c.name,
+          host: c.host ?? '',
+          port: c.port != null ? String(c.port) : '',
+          user: c.user ?? '',
+          password: c.password ?? '',
+          database: c.database ?? '',
+          connectionString: c.connectionString ?? '',
+        });
+      },
+      (err) => {
+        // don't silently show new-connection defaults for an edit
+        toast.error('Could not load connection', {
+          description: err instanceof ApiError ? err.message : String(err),
+        });
+        closeConnectionDialog();
+      },
+    );
+  }, [dialog.open, editing, closeConnectionDialog]);
 
   const driver = useMemo(
     () => drivers?.find((d) => d.engine === engine),

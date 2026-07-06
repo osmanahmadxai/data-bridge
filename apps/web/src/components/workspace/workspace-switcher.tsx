@@ -9,7 +9,7 @@ import {
   useCreateWorkspace,
   useDeleteWorkspace,
 } from '@/lib/queries';
-import { useStudio } from '@/lib/store';
+import { readPersistedWorkspaceId, useStudio } from '@/lib/store';
 import { DEFAULT_WORKSPACE_ID } from '@data-bridge/core';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -52,13 +52,17 @@ export function WorkspaceSwitcher() {
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   // once workspaces load, make sure something is selected. prefer keeping the
-  // current one; otherwise fall back to the default, then the first.
+  // current one, then the persisted one (so a refresh returns to the same
+  // workspace); otherwise fall back to the default, then the first.
   useEffect(() => {
     if (!workspaces || workspaces.length === 0) return;
     const stillThere = workspaces.some((w) => w.id === activeWorkspaceId);
     if (!stillThere) {
+      const persisted = readPersistedWorkspaceId();
       const fallback =
-        workspaces.find((w) => w.id === DEFAULT_WORKSPACE_ID) ?? workspaces[0];
+        workspaces.find((w) => w.id === persisted) ??
+        workspaces.find((w) => w.id === DEFAULT_WORKSPACE_ID) ??
+        workspaces[0];
       if (fallback) setActiveWorkspace(fallback.id);
     }
   }, [workspaces, activeWorkspaceId, setActiveWorkspace]);
@@ -66,6 +70,8 @@ export function WorkspaceSwitcher() {
   const active = workspaces?.find((w) => w.id === activeWorkspaceId) ?? null;
 
   async function handleCreate() {
+    // the Enter-key handler bypasses the button's disabled state
+    if (create.isPending) return;
     const trimmed = name.trim();
     if (!trimmed) return;
     try {

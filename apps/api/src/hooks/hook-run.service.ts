@@ -68,6 +68,13 @@ export class HookRunService implements OnModuleInit {
   async resendFailed(hookId: string, runId: string): Promise<HookRun> {
     const run = await this.getRunRow(runId);
     if (run.hookId !== hookId) throw new NotFoundError(`Run "${runId}" not found`);
+    // an active run may still be writing these same delivery rows; re-sending
+    // concurrently would interleave upserts on the same (runId, sequence) keys
+    if (ACTIVE.includes(run.status as HookRunStatus)) {
+      throw new ConflictError(
+        'This run is still active. Stop it (or wait for it to finish) before retrying failed deliveries.',
+      );
+    }
     const hook = await this.store.resolve(hookId);
     const failed = await this.prisma.hookDelivery.findMany({
       where: { runId, status: 'failed' },
@@ -644,7 +651,18 @@ export class HookRunService implements OnModuleInit {
       // but are owned by their own services, never re-enqueue those here
       const hook = await this.store.get(r.hookId).catch(() => null);
       if (!hook || hook.trigger.kind !== 'replay') continue;
-      // deterministic jobId means this is a no-op if the job already exists
+      // deterministic jobId means adding is a no-op if the job already exists —
+      // including a LINGERING failed/completed one (removeOnFail keeps 500), so
+      // clear those out first or the recovery silently does nothing
+      try {
+        const existing = await this.queue.getJob(r.id);
+        if (existing) {
+          const state = await existing.getState();
+          if (state === 'failed' || state === 'completed') await existing.remove();
+        }
+      } catch {
+        /* best-effort, the add below still surfaces real queue failures */
+      }
       await this.enqueue(r.id, r.hookId).catch((err) =>
         this.logger.warn(
           `Could not re-enqueue run ${r.id}: ${(err as Error).message}`,

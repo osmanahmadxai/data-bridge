@@ -12,6 +12,19 @@ import type {
 import { ConnectionError, QueryError } from '../../errors';
 import { BaseSqlAdapter } from './base-sql-adapter';
 
+/**
+ * mysql2 escapes plain objects into `key = 'value'` pairs and arrays into
+ * comma lists, which silently corrupts statements when structured values flow
+ * in from other engines (e.g. Postgres jsonb rows crossing a bridge). coerce
+ * them to portable scalars, mirroring the SQLite adapter's approach.
+ */
+function coerceMysqlParam(value: unknown): unknown {
+  if (value === undefined) return null;
+  if (value instanceof Date || Buffer.isBuffer(value)) return value;
+  if (value !== null && typeof value === 'object') return JSON.stringify(value);
+  return value;
+}
+
 export const MYSQL_CAPABILITIES: AdapterCapabilities = {
   query: true,
   queryLanguage: 'sql',
@@ -33,8 +46,21 @@ export class MysqlAdapter extends BaseSqlAdapter {
 
   private getPool(): Pool {
     if (this.pool) return this.pool;
+    // shared driver options applied to BOTH config styles, so a
+    // connection-string setup gets the same date semantics, pool sizing and
+    // timeouts as a field-by-field one
+    const shared = {
+      connectionLimit: 5,
+      connectTimeout: 10_000,
+      namedPlaceholders: false,
+      dateStrings: true,
+      // BIGINT/DECIMAL beyond 2^53 would otherwise be silently rounded as
+      // JS numbers
+      supportBigNumbers: true,
+      bigNumberStrings: true,
+    } as const;
     this.pool = this.config.connectionString
-      ? mysql.createPool(this.config.connectionString)
+      ? mysql.createPool({ uri: this.config.connectionString, ...shared })
       : mysql.createPool({
           host: this.config.host,
           port: this.config.port ?? 3306,
@@ -42,10 +68,7 @@ export class MysqlAdapter extends BaseSqlAdapter {
           password: this.config.password,
           database: this.config.database,
           ssl: this.config.ssl ? { rejectUnauthorized: false } : undefined,
-          connectionLimit: 5,
-          connectTimeout: 10_000,
-          namedPlaceholders: false,
-          dateStrings: true,
+          ...shared,
         });
     return this.pool;
   }
@@ -113,8 +136,9 @@ export class MysqlAdapter extends BaseSqlAdapter {
     params: unknown[],
   ): Promise<QueryResult> {
     const started = performance.now();
+    const bound = params.map(coerceMysqlParam);
     try {
-      const [rows, fields] = await this.getPool().query(sql, params);
+      const [rows, fields] = await this.getPool().query(sql, bound);
       const executionMs = Math.round(performance.now() - started);
 
       if (Array.isArray(rows)) {

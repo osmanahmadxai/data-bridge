@@ -10,8 +10,17 @@ import type {
   QueryResult,
   TableSchema,
 } from '../types';
-import { ConnectionError, QueryError, UnsupportedError } from '../../errors';
-import { assertSafeIdentifier, BaseSqlAdapter } from './base-sql-adapter';
+import {
+  BadRequestError,
+  ConnectionError,
+  QueryError,
+  UnsupportedError,
+} from '../../errors';
+import {
+  assertSafeDefaultValue,
+  assertSafeIdentifier,
+  BaseSqlAdapter,
+} from './base-sql-adapter';
 
 /**
  * better-sqlite3 only binds numbers, strings, bigints, buffers and null. coerce
@@ -218,12 +227,28 @@ export class SqliteAdapter extends BaseSqlAdapter {
     };
   }
 
+  /** SQLite caps bound placeholders at SQLITE_MAX_VARIABLE_NUMBER (32766) */
+  protected override maxBindParams(): number {
+    return 32_766;
+  }
+
   /** SQLite needs the auto-increment PK declared inline */
   override async createTable(spec: CreateTableSpec): Promise<void> {
     if (!spec.columns.length) {
       throw new QueryError('A table needs at least one column');
     }
     const aiPk = spec.columns.find((c) => c.autoIncrement && c.primaryKey);
+    const otherPk = spec.columns.filter((c) => c.primaryKey && c !== aiPk);
+    // an inline `INTEGER PRIMARY KEY AUTOINCREMENT` plus a table-level
+    // `PRIMARY KEY (...)` would emit two PRIMARY KEY clauses, which SQLite
+    // rejects — and AUTOINCREMENT is only valid on a sole INTEGER PK anyway
+    if (aiPk && otherPk.length > 0) {
+      throw new BadRequestError(
+        'SQLite AUTOINCREMENT requires the column to be the only primary-key ' +
+          'column. Remove the other primary-key columns or the ' +
+          'auto-increment flag.',
+      );
+    }
     const parts = spec.columns.map((c) => {
       const name = this.quoteIdent(assertSafeIdentifier(c.name));
       if (c === aiPk) return `${name} INTEGER PRIMARY KEY AUTOINCREMENT`;
@@ -231,13 +256,11 @@ export class SqliteAdapter extends BaseSqlAdapter {
       if (!c.nullable) sql += ' NOT NULL';
       if (c.unique && !c.primaryKey) sql += ' UNIQUE';
       if (c.defaultValue && c.defaultValue.trim()) {
-        sql += ` DEFAULT ${c.defaultValue.trim()}`;
+        sql += ` DEFAULT ${assertSafeDefaultValue(c.defaultValue)}`;
       }
       return sql;
     });
-    const pk = spec.columns
-      .filter((c) => c.primaryKey && c !== aiPk)
-      .map((c) => this.quoteIdent(c.name));
+    const pk = otherPk.map((c) => this.quoteIdent(c.name));
     if (pk.length) parts.push(`PRIMARY KEY (${pk.join(', ')})`);
     await this.runSql(
       `CREATE TABLE ${this.quoteIdent(assertSafeIdentifier(spec.table))} (${parts.join(', ')})`,

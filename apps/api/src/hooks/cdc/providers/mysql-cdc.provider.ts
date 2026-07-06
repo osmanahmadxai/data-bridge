@@ -45,19 +45,33 @@ export class MysqlCdcProvider implements CdcProvider {
 
   constructor(private readonly pool: AdapterPoolService) {}
 
-  /** compare "file:pos" cursors: filename first, then numeric position */
+  /** compare "file:pos[:row]" cursors: filename, then position, then row index */
   cursorAfter(a: string, b: string | null): boolean {
     if (!b) return true;
-    const [fa, pa] = this.splitCursor(a);
-    const [fb, pb] = this.splitCursor(b);
+    const [fa, pa, ra] = this.splitCursor(a);
+    const [fb, pb, rb] = this.splitCursor(b);
     if (fa !== fb) return fa > fb; // zero-padded binlog names compare lexically
-    return pa > pb;
+    if (pa !== pb) return pa > pb;
+    return ra > rb;
   }
 
-  private splitCursor(c: string): [string, number] {
+  /**
+   * parse "file:pos:rowIdx" (or legacy "file:pos" persisted before per-row
+   * cursors existed — a missing row index compares as -1, so every row of the
+   * next multi-row event still counts as "after" the old watermark)
+   */
+  private splitCursor(c: string): [string, number, number] {
+    const parts = c.split(':');
+    if (parts.length >= 3) {
+      const row = Number(parts[parts.length - 1]);
+      const pos = Number(parts[parts.length - 2]);
+      if (Number.isFinite(row) && Number.isFinite(pos)) {
+        return [parts.slice(0, -2).join(':'), pos, row];
+      }
+    }
     const idx = c.lastIndexOf(':');
-    if (idx < 0) return [c, 0];
-    return [c.slice(0, idx), Number(c.slice(idx + 1)) || 0];
+    if (idx < 0) return [c, 0, -1];
+    return [c.slice(0, idx), Number(c.slice(idx + 1)) || 0, -1];
   }
 
   /* ----- connection details, zongji needs discrete fields ----- */
@@ -180,14 +194,21 @@ export class MysqlCdcProvider implements CdcProvider {
     let stopped = false;
     let zongji: ZongJi | null = null;
     let attempt = 0;
-    // resume bookkeeping, durable across reconnects and restarts
-    let [binlogName, position] = fromCursor ? this.splitCursor(fromCursor) : ['', 0];
+    // resume bookkeeping: tracks the last processed binlog position so both the
+    // initial start AND every reconnect resume exactly where we left off
+    let [binlogName, position] = fromCursor ? this.splitCursor(fromCursor) : ['', 0, -1];
 
     const onEvent = async (evt: BinLogEvent): Promise<void> => {
       const name = evt.getEventName();
       if (name === 'rotate') {
         // rotate tells us the current binlog filename (incl. the one at startup)
-        binlogName = (evt as { binlogName?: string }).binlogName ?? binlogName;
+        const next = (evt as { binlogName?: string }).binlogName;
+        if (next && next !== binlogName) {
+          // a genuinely new file always begins at position 4; the startup
+          // rotate (binlogName still empty) must not fabricate a resume point
+          if (binlogName) position = 4;
+          binlogName = next;
+        }
         return;
       }
       if (!ROW_EVENTS.has(name)) return;
@@ -199,23 +220,34 @@ export class MysqlCdcProvider implements CdcProvider {
         rows: Record<string, unknown>[] | { before: Record<string, unknown>; after: Record<string, unknown> }[];
       };
       const meta = rowEvt.tableMap[rowEvt.tableId];
-      if (!meta || meta.parentSchema !== db || meta.tableName !== src.table) return;
+      if (!meta || meta.parentSchema !== db || meta.tableName !== src.table) {
+        position = rowEvt.nextPosition; // nothing to deliver, safe to skip on reconnect
+        return;
+      }
 
       const op: CdcOperation =
         name === 'writerows' ? 'insert' : name === 'deleterows' ? 'delete' : 'update';
-      if (!ops.has(op)) return;
+      if (!ops.has(op)) {
+        position = rowEvt.nextPosition;
+        return;
+      }
 
       // backpressure: pause the binlog socket while we deliver this batch
       if (zongji && !stopped) zongji.pause();
       try {
-        const cursor = `${binlogName}:${rowEvt.nextPosition}`;
-        for (const r of rowEvt.rows) {
+        // per-ROW cursor: every row in a multi-row event needs its own position,
+        // otherwise the orchestrator's strict watermark drops rows 2..N
+        for (let i = 0; i < rowEvt.rows.length; i++) {
+          const r = rowEvt.rows[i]!;
           const row =
             op === 'update'
               ? (r as { after: Record<string, unknown> }).after
               : (r as Record<string, unknown>);
-          await handlers.onChange({ op, row, cursor });
+          await handlers.onChange({ op, row, cursor: `${binlogName}:${rowEvt.nextPosition}:${i}` });
         }
+        // remember the resume point so a reconnect continues from here instead
+        // of silently jumping to the end of the binlog
+        position = rowEvt.nextPosition;
       } finally {
         if (zongji && !stopped) zongji.resume();
       }
@@ -248,11 +280,12 @@ export class MysqlCdcProvider implements CdcProvider {
         serverId,
       };
       if (binlogName && position > 0) {
+        // resume from the last processed position — kept up to date by onEvent,
+        // so a mid-stream reconnect never loses the events in between
         startOpts.filename = binlogName;
         startOpts.position = position;
-        // after the first resume we follow nextPosition live, clear the seed
-        position = 0;
       } else {
+        // genuinely no cursor yet (fresh hook): start at the tip of the binlog
         startOpts.startAtEnd = true;
       }
       instance.start(startOpts);
