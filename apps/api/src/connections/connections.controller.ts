@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import {
   type ConnectionConfig,
+  ConflictError,
   backupSchema,
   browseSchema,
   connectionInputSchema,
@@ -25,6 +26,7 @@ import {
   type ConnectionInputDTO,
 } from '@data-bridge/core';
 import type { z } from 'zod';
+import { PrismaService } from '../common/prisma.service';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { AdapterPoolService } from './adapter-pool.service';
 import { ConnectionStoreService } from './connection-store.service';
@@ -45,6 +47,7 @@ export class ConnectionsController {
   constructor(
     private readonly store: ConnectionStoreService,
     private readonly pool: AdapterPoolService,
+    private readonly prisma: PrismaService,
   ) {}
 
   /* ----- CRUD ----- */
@@ -97,6 +100,27 @@ export class ConnectionsController {
 
   @Delete(':id')
   async remove(@Param('id') id: string): Promise<{ id: string }> {
+    await this.store.get(id); // 404s if missing
+    // Hook.connectionId has no FK, so enforce the reference here: deleting a
+    // connection out from under its bridges would leave zombie listeners and
+    // runs that can only fail. destinations embed connection ids in their
+    // JSON, so a contains-check on the uuid covers that side too
+    const [asSource, asDest] = await Promise.all([
+      this.prisma.hook.findMany({
+        where: { connectionId: id },
+        select: { id: true },
+      }),
+      this.prisma.hook.findMany({
+        where: { destinationJson: { contains: id } },
+        select: { id: true },
+      }),
+    ]);
+    const inUse = new Set([...asSource, ...asDest].map((h) => h.id)).size;
+    if (inUse > 0) {
+      throw new ConflictError(
+        `This connection is used by ${inUse} bridge${inUse === 1 ? '' : 's'}. Delete or repoint ${inUse === 1 ? 'it' : 'them'} first.`,
+      );
+    }
     await this.pool.evict(id);
     await this.store.remove(id);
     return { id };

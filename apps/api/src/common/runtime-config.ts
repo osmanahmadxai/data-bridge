@@ -6,7 +6,8 @@ function resolveDataDir(): string {
   const dir = process.env.DATABRIDGE_DATA_DIR
     ? resolve(process.env.DATABRIDGE_DATA_DIR)
     : resolve(process.cwd(), '.data-bridge');
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  // 0o700: the dir holds the master key, keep it out of reach of other users
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 });
   return dir;
 }
 
@@ -20,7 +21,11 @@ export const runtimeConfig = {
   maxQueryRows: Number(process.env.DATABRIDGE_MAX_QUERY_ROWS ?? 5000),
   poolIdleMs: Number(process.env.DATABRIDGE_POOL_IDLE_MS ?? 300_000),
   port: Number(process.env.PORT ?? 4000),
-  webOrigin: process.env.WEB_ORIGIN ?? true,
+  // never fall back to reflecting arbitrary origins: with credentialed CORS
+  // that would let any web page the operator visits call this API
+  webOrigin: process.env.WEB_ORIGIN
+    ? process.env.WEB_ORIGIN.split(',').map((o) => o.trim())
+    : `http://localhost:${process.env.WEB_PORT ?? '3002'}`,
   /** Redis URL backing the BullMQ hook-run queue */
   redisUrl: process.env.REDIS_URL ?? 'redis://localhost:6379',
   /** worker concurrency: how many hook runs may run in parallel */
