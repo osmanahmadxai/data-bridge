@@ -64,6 +64,8 @@ interface StudioState {
   setActiveConnection: (id: string | null) => void;
   setActiveDatabase: (db?: string) => void;
   selectRelation: (rel: SelectedRelation) => void;
+  /** e.g. after the selected table was dropped */
+  clearSelection: () => void;
   setTab: (tab: StudioTab) => void;
 
   selectHook: (id: string | null) => void;
@@ -88,8 +90,22 @@ interface StudioState {
 
 const initial = freshTabs();
 
+/** localStorage key for the last active workspace (survives refreshes) */
+const WORKSPACE_STORAGE_KEY = 'data-bridge.activeWorkspaceId';
+
+export function readPersistedWorkspaceId(): string | null {
+  if (typeof window === 'undefined') return null;
+  return window.localStorage.getItem(WORKSPACE_STORAGE_KEY);
+}
+
+function persistWorkspaceId(id: string | null) {
+  if (typeof window === 'undefined') return;
+  if (id) window.localStorage.setItem(WORKSPACE_STORAGE_KEY, id);
+  else window.localStorage.removeItem(WORKSPACE_STORAGE_KEY);
+}
+
 export const useStudio = create<StudioState>((set) => ({
-  activeWorkspaceId: null,
+  activeWorkspaceId: readPersistedWorkspaceId(),
   activeConnectionId: null,
   activeDatabase: undefined,
   selected: null,
@@ -117,9 +133,21 @@ export const useStudio = create<StudioState>((set) => ({
   openDataSources: () => set({ dataSourcesOpen: true }),
   closeDataSources: () => set({ dataSourcesOpen: false }),
 
-  // switching workspace drops the selected bridge (it lives in another one)
+  // actually switching workspace drops the selected bridge, table and
+  // connection (they live in another one); re-setting the same id is a no-op
+  // so a URL/localStorage restore isn't wiped
   setActiveWorkspace: (id) =>
-    set({ activeWorkspaceId: id, selectedHookId: null, selected: null }),
+    set((s) => {
+      persistWorkspaceId(id);
+      if (s.activeWorkspaceId === id) return {};
+      return {
+        activeWorkspaceId: id,
+        selectedHookId: null,
+        selected: null,
+        activeConnectionId: null,
+        activeDatabase: undefined,
+      };
+    }),
 
   setActiveConnection: (id) => {
     const f = freshTabs();
@@ -135,6 +163,7 @@ export const useStudio = create<StudioState>((set) => ({
   setActiveDatabase: (db) => set({ activeDatabase: db, selected: null }),
   selectRelation: (rel) =>
     set({ selected: rel, tab: 'data', selectedHookId: null }),
+  clearSelection: () => set({ selected: null }),
   setTab: (tab) => set({ tab }),
 
   addQueryTab: (opts) =>

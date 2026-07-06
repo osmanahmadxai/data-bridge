@@ -72,6 +72,7 @@ export function SchemaTree() {
     setActiveDatabase,
     selected,
     selectRelation,
+    clearSelection,
     openInQuery,
     openHookEditor,
   } = useStudio();
@@ -135,6 +136,17 @@ export function SchemaTree() {
         tableSchema,
         activeDatabase,
       );
+      // if the dropped table is the one being browsed, deselect it and drop
+      // its cached pages so the grid doesn't query a ghost table
+      if (
+        selected?.table === table &&
+        (selected.schema ?? '') === (tableSchema ?? '')
+      ) {
+        clearSelection();
+      }
+      await qc.invalidateQueries({
+        queryKey: ['connections', activeConnectionId, 'browse'],
+      });
       await refreshSchema();
       toast.success(`Dropped ${table}`);
     } catch (err) {

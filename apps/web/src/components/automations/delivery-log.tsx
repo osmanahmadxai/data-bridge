@@ -193,8 +193,14 @@ export function DeliveryMonitor({
       toast.error('Enter a valid range (from must be less than or equal to to).');
       return;
     }
+    // bound the range BEFORE building it — a huge `to` would freeze the tab
+    const start = Math.max(0, from);
+    if (to - start + 1 > 10_000) {
+      toast.error('Too many at once — skip up to 10,000 sequences per action.');
+      return;
+    }
     const targets: number[] = [];
-    for (let s = Math.max(0, from); s <= to; s++) {
+    for (let s = start; s <= to; s++) {
       if (!bySeq.get(s)) targets.push(s);
     }
     await runSkip(targets);

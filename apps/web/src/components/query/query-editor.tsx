@@ -52,8 +52,9 @@ export function QueryEditor() {
   const lang = driver?.capabilities.queryLanguage ?? 'sql';
 
   const { data: schema } = useSchema(activeConnectionId, activeDatabase);
-  const schemaRef = useRef(schema);
-  schemaRef.current = schema;
+  // module-level ref so the (once-only) completion provider always reads the
+  // schema of whichever editor instance rendered last
+  latestSchemaRef.current = schema;
 
   const activeTab =
     queryTabs.find((t) => t.id === activeQueryTabId) ?? queryTabs[0]!;
@@ -70,6 +71,12 @@ export function QueryEditor() {
     if (!activeTab.sql.trim()) updateQueryTabSql(activeTab.id, STARTER[lang]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lang, activeTab.id]);
+
+  // results are keyed by tab id; drop them all when the connection changes so
+  // a stale result set never shows against another database's tabs
+  useEffect(() => {
+    setResults({});
+  }, [activeConnectionId]);
 
   const run = useCallback(async () => {
     if (!activeConnectionId) return;
@@ -94,13 +101,18 @@ export function QueryEditor() {
     }
   }, [activeConnectionId, activeDatabase, activeQueryTabId, value]);
 
+  // Monaco keeps the command callback it was mounted with forever; go through
+  // a ref so ⌘/Ctrl+Enter always runs against the current connection/tab
+  const runRef = useRef(run);
+  runRef.current = run;
+
   const handleMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
     editor.addCommand(
       monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
-      () => void run(),
+      () => void runRef.current(),
     );
-    if (lang === 'sql') registerSqlCompletion(monaco, schemaRef);
+    if (lang === 'sql') registerSqlCompletion(monaco);
   };
 
   function formatSql() {
@@ -146,6 +158,12 @@ export function QueryEditor() {
               aria-label="Close tab"
               onClick={(e) => {
                 e.stopPropagation();
+                // prune the closed tab's result so the map doesn't grow forever
+                setResults((r) => {
+                  const next = { ...r };
+                  delete next[t.id];
+                  return next;
+                });
                 closeQueryTab(t.id);
               }}
             >
@@ -218,10 +236,9 @@ export function QueryEditor() {
 
 /** registers schema-aware SQL autocompletion (tables + columns + keywords) */
 let sqlCompletionRegistered = false;
-function registerSqlCompletion(
-  monaco: Monaco,
-  schemaRef: { current: unknown },
-) {
+/** updated by every mounted editor so completion reads the live schema */
+const latestSchemaRef: { current: unknown } = { current: undefined };
+function registerSqlCompletion(monaco: Monaco) {
   if (sqlCompletionRegistered) return;
   sqlCompletionRegistered = true;
 
@@ -243,7 +260,7 @@ function registerSqlCompletion(
       const suggestions: import('monaco-editor').languages.CompletionItem[] =
         [];
 
-      const schema = schemaRef.current as
+      const schema = latestSchemaRef.current as
         | {
             namespaces: {
               tables: { name: string; columns: { name: string }[] }[];

@@ -1,7 +1,12 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 import type {
   BrowseParams,
   ConnectionInputDTO,
@@ -198,6 +203,32 @@ export function useDeleteHook() {
   });
 }
 
+/** the element shape of the polled `['hookStatuses', workspaceId]` lists */
+interface HookStatus {
+  hookId: string;
+  active: boolean;
+  lastStatus: string;
+}
+
+/** upsert the authoritative run into the runs list so the UI updates instantly */
+function upsertHookRun(qc: QueryClient, hookId: string, run: HookRun) {
+  qc.setQueryData<HookRun[]>(queryKeys.hookRuns(hookId), (old = []) => [
+    run,
+    ...old.filter((r) => r.id !== run.id),
+  ]);
+}
+
+/** patch a bridge's status across every workspace's status list */
+function patchHookStatus(
+  qc: QueryClient,
+  hookId: string,
+  patch: { active: boolean; lastStatus: string },
+) {
+  qc.setQueriesData<HookStatus[]>({ queryKey: ['hookStatuses'] }, (old) =>
+    old?.map((s) => (s.hookId === hookId ? { ...s, ...patch } : s)),
+  );
+}
+
 export function useStartHookRun(hookId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -208,8 +239,11 @@ export function useStartHookRun(hookId: string) {
         retryFailedOf?: string;
       } = {},
     ) => api.startHookRun(hookId, opts),
-    // also refresh statuses so the map node/edge updates instantly, not on the poll
-    onSuccess: () => {
+    // write the returned run into the cache first so the sidebar badge and run
+    // list update instantly, then invalidate to reconcile with the server
+    onSuccess: (run) => {
+      upsertHookRun(qc, hookId, run);
+      patchHookStatus(qc, hookId, { active: true, lastStatus: run.status });
       qc.invalidateQueries({ queryKey: queryKeys.hookRuns(hookId) });
       qc.invalidateQueries({ queryKey: ['hookStatuses'] });
     },
@@ -220,7 +254,9 @@ export function useStartWatch(hookId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api.startWatch(hookId),
-    onSuccess: () => {
+    onSuccess: (run) => {
+      upsertHookRun(qc, hookId, run);
+      patchHookStatus(qc, hookId, { active: true, lastStatus: run.status });
       qc.invalidateQueries({ queryKey: queryKeys.hookRuns(hookId) });
       qc.invalidateQueries({ queryKey: ['hookStatuses'] });
     },
@@ -231,7 +267,12 @@ export function useStopWatch(hookId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api.stopWatch(hookId),
-    onSuccess: () => {
+    // stop returns null when nothing was watching — nothing to write then
+    onSuccess: (run) => {
+      if (run) {
+        upsertHookRun(qc, hookId, run);
+        patchHookStatus(qc, hookId, { active: false, lastStatus: run.status });
+      }
       qc.invalidateQueries({ queryKey: queryKeys.hookRuns(hookId) });
       qc.invalidateQueries({ queryKey: ['hookStatuses'] });
     },
@@ -256,7 +297,9 @@ export function useCancelHookRun(hookId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (runId: string) => api.cancelHookRun(hookId, runId),
-    onSuccess: () => {
+    onSuccess: (run) => {
+      upsertHookRun(qc, hookId, run);
+      patchHookStatus(qc, hookId, { active: false, lastStatus: run.status });
       qc.invalidateQueries({ queryKey: queryKeys.hookRuns(hookId) });
       qc.invalidateQueries({ queryKey: ['hookStatuses'] });
     },
@@ -307,20 +350,17 @@ export function useHookDeliveries(
     staleTime: 0,
   });
 
-  const { refetch } = query;
-
-  // when a run goes from active to terminal, fire one final refetch so
-  // deliveries written between the last poll and completion show up.
-  // also invalidate sibling windows so navigating to another page is fresh
+  // when a run goes from active to terminal, invalidate every window so
+  // deliveries written between the last poll and completion show up (the
+  // active query refetches immediately, siblings on next mount)
   useEffect(() => {
     if (prevLiveRef.current && !live && hookId && runId) {
-      void refetch();
       void qc.invalidateQueries({
         queryKey: queryKeys.hookDeliveries(hookId, runId),
       });
     }
     prevLiveRef.current = live;
-  }, [live, hookId, runId, refetch, qc]);
+  }, [live, hookId, runId, qc]);
 
   return query;
 }

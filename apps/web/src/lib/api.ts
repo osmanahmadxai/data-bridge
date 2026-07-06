@@ -70,7 +70,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       error.details,
     );
   }
-  return body.data as T;
+  // a 2xx with an empty/non-JSON body parses to null — don't throw on it
+  return body?.data as T;
 }
 
 function jsonBody(value: unknown): RequestInit {
