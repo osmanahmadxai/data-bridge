@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { UserMenu } from '@/components/settings/user-menu';
 import { ConnectionDialog } from '@/components/connections/connection-dialog';
 import { AutomationsView } from '@/components/automations/automations-view';
 import { HookList } from '@/components/automations/hook-list';
@@ -97,6 +98,7 @@ export function Studio() {
                   <Database className="h-4 w-4" />
                 </Button>
                 <ThemeToggle />
+                <UserMenu />
               </div>
             </div>
             <Separator />

@@ -3,8 +3,13 @@
  * throws a structured {@link ApiError} on `{ error }` responses
  */
 import type {
+  AppSettings,
+  AppSettingsDTO,
+  AuthStatus,
+  AuthUser,
   BrowseParams,
   BrowseResult,
+  ChangePasswordDTO,
   ConnectionConfig,
   ConnectionInputDTO,
   CreateTableSpec,
@@ -20,7 +25,9 @@ import type {
   HookPreviewDTO,
   HookRun,
   InsertRowParams,
+  LoginDTO,
   QueryResult,
+  SetupDTO,
   UpdateRowParams,
   Workspace,
   WorkspaceInputDTO,
@@ -46,6 +53,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     res = await fetch(`${BASE_URL}${path}`, {
       ...init,
+      // send/receive the httpOnly session cookie on every call (web and api
+      // are different origins; CORS allows credentials)
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
         ...init?.headers,
@@ -80,6 +90,26 @@ function jsonBody(value: unknown): RequestInit {
 
 export const api = {
   listDrivers: () => request<DriverInfo[]>('/drivers'),
+
+  /* ----- auth ----- */
+  listAuthStatus: () => request<AuthStatus>('/auth/status'),
+  setup: (input: SetupDTO) =>
+    request<AuthUser>('/auth/setup', { method: 'POST', ...jsonBody(input) }),
+  login: (input: LoginDTO) =>
+    request<AuthUser>('/auth/login', { method: 'POST', ...jsonBody(input) }),
+  logout: () =>
+    request<{ success: true }>('/auth/logout', { method: 'POST' }),
+  getMe: () => request<AuthUser>('/auth/me'),
+  changePassword: (input: ChangePasswordDTO) =>
+    request<AuthUser>('/auth/change-password', {
+      method: 'POST',
+      ...jsonBody(input),
+    }),
+
+  /* ----- app settings ----- */
+  getSettings: () => request<AppSettings>('/settings'),
+  updateSettings: (input: AppSettingsDTO) =>
+    request<AppSettings>('/settings', { method: 'PUT', ...jsonBody(input) }),
 
   /* ----- workspaces ----- */
   listWorkspaces: () => request<Workspace[]>('/workspaces'),

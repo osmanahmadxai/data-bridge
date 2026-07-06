@@ -8,16 +8,22 @@ import {
   type QueryClient,
 } from '@tanstack/react-query';
 import type {
+  AppSettingsDTO,
   BrowseParams,
+  ChangePasswordDTO,
   ConnectionInputDTO,
   HookInputDTO,
   HookRun,
+  LoginDTO,
+  SetupDTO,
   WorkspaceInputDTO,
 } from '@data-bridge/core';
 import { api } from './api';
 import { useStudio } from './store';
 
 export const queryKeys = {
+  authStatus: ['auth', 'status'] as const,
+  settings: ['settings'] as const,
   drivers: ['drivers'] as const,
   workspaces: ['workspaces'] as const,
   connections: ['connections'] as const,
@@ -34,6 +40,70 @@ export const queryKeys = {
   hookDeliveries: (id: string, runId: string) =>
     ['hooks', id, 'runs', runId, 'deliveries'] as const,
 };
+
+/* ----- auth ----- */
+
+/** public probe that decides which screen (setup / login / app) to render */
+export function useAuthStatus() {
+  return useQuery({
+    queryKey: queryKeys.authStatus,
+    queryFn: () => api.listAuthStatus(),
+  });
+}
+
+export function useLogin() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: LoginDTO) => api.login(input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.authStatus }),
+  });
+}
+
+export function useSetup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: SetupDTO) => api.setup(input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.authStatus }),
+  });
+}
+
+export function useLogout() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.logout(),
+    // drop every cached query from the previous session, then re-probe status
+    onSuccess: () => {
+      qc.clear();
+      qc.invalidateQueries({ queryKey: queryKeys.authStatus });
+    },
+  });
+}
+
+export function useChangePassword() {
+  return useMutation({
+    mutationFn: (input: ChangePasswordDTO) => api.changePassword(input),
+  });
+}
+
+/* ----- app settings ----- */
+
+export function useSettings() {
+  return useQuery({
+    queryKey: queryKeys.settings,
+    queryFn: () => api.getSettings(),
+  });
+}
+
+export function useUpdateSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: AppSettingsDTO) => api.updateSettings(input),
+    onSuccess: (settings) => {
+      qc.setQueryData(queryKeys.settings, settings);
+      qc.invalidateQueries({ queryKey: queryKeys.settings });
+    },
+  });
+}
 
 export function useDrivers() {
   return useQuery({
@@ -330,6 +400,8 @@ export function useHookDeliveries(
     status?: 'success' | 'failed' | 'skipped';
     from?: number;
     to?: number;
+    offset?: number;
+    limit?: number;
   } = {},
 ) {
   const qc = useQueryClient();
@@ -342,8 +414,10 @@ export function useHookDeliveries(
         : ['hookDeliveries', 'none'],
     queryFn: () =>
       api.listHookDeliveries(hookId as string, runId as string, {
-        ...opts,
+        // default cap for range (from/to) windows; offset windows pass their
+        // own page-size limit
         limit: 2000,
+        ...opts,
       }),
     enabled: !!hookId && !!runId,
     refetchInterval: live ? 1500 : false,

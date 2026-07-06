@@ -19,6 +19,34 @@ datasource db {
 //  someone wants a second one.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Auth — a single operator ("admin") account guards the whole API. The account
+//  is created on first run; there is no self-service signup. `sessionVersion`
+//  bumps on every password change so existing session cookies stop validating
+//  (i.e. changing the password logs every other session out).
+// ─────────────────────────────────────────────────────────────────────────────
+
+model AppUser {
+  id             String   @id
+  username       String   @unique
+  passwordHash   String   @map("password_hash") // scrypt: "salt:derivedKey", hex
+  sessionVersion Int      @default(0) @map("session_version")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("app_users")
+}
+
+// Global application settings as a key/value store (single-operator install, so
+// no per-user scoping). Values are JSON-encoded strings.
+model AppSetting {
+  key       String   @id
+  valueJson String   @map("value_json")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("app_settings")
+}
+
 model Workspace {
   id        String   @id
   name      String

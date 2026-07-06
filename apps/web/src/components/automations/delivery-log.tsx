@@ -28,6 +28,11 @@ import {
 } from '@/components/ui/popover';
 
 const CELLS_PER_PAGE = 600;
+/**
+ * page size for watch/CDC runs, where the total is unknown so we can't build a
+ * fixed grid. we page the delivery log by offset in windows of this many rows.
+ */
+const LIVE_PAGE_SIZE = 200;
 
 /** visual state of a timeline cell */
 type CellState = DeliveryStatus | 'queued';
@@ -70,12 +75,16 @@ export function DeliveryMonitor({
   const cellCount = totalRows != null
     ? Math.ceil(totalRows / Math.max(1, batchSize))
     : null;
+  // known total (replay runs): a fixed grid we can page over.
+  // unknown total (watch/CDC): we page by offset without a known end.
+  const knownTotal = cellCount != null;
   const pageCount = cellCount != null
     ? Math.max(1, Math.ceil(cellCount / CELLS_PER_PAGE))
     : 1;
 
   const [page, setPage]             = useState(0);
   const [manualPage, setManualPage] = useState(false); // true = user navigated manually
+  const [livePage, setLivePage]     = useState(0);      // offset-window index for unknown-total runs
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected]     = useState<Set<number>>(new Set());
   const [anchor, setAnchor]         = useState<number | null>(null);
@@ -86,6 +95,7 @@ export function DeliveryMonitor({
   // reset all local state when switching to a different run
   useEffect(() => {
     setPage(0);
+    setLivePage(0);
     setManualPage(false);
     setSelected(new Set());
     setOpenId(null);
@@ -107,9 +117,20 @@ export function DeliveryMonitor({
     ? Math.min(windowStart + CELLS_PER_PAGE, cellCount)
     : windowStart + CELLS_PER_PAGE;
 
+  // unknown-total offset window. while live and not manually paged we follow the
+  // latest window (offset undefined → server returns the tail of the log).
+  const followingLatest = live && !manualPage;
+  const liveOffset = knownTotal
+    ? undefined
+    : followingLatest
+      ? undefined
+      : livePage * LIVE_PAGE_SIZE;
+
   const { data: deliveries, isFetching } = useHookDeliveries(hookId, runId, live, {
-    from: cellCount != null ? windowStart : undefined,
-    to:   cellCount != null ? windowEnd - 1 : undefined,
+    from:   knownTotal ? windowStart : undefined,
+    to:     knownTotal ? windowEnd - 1 : undefined,
+    offset: knownTotal ? undefined : liveOffset,
+    limit:  knownTotal ? undefined : LIVE_PAGE_SIZE,
   });
 
   const bySeq = useMemo(() => {
@@ -117,6 +138,9 @@ export function DeliveryMonitor({
     for (const d of deliveries ?? []) m.set(d.sequence, d);
     return m;
   }, [deliveries]);
+
+  // an unknown-total page that came back short is the last page — nothing older
+  const livePageShort = !knownTotal && (deliveries?.length ?? 0) < LIVE_PAGE_SIZE;
 
   const sequences = useMemo(() => {
     if (cellCount != null) {
@@ -135,6 +159,27 @@ export function DeliveryMonitor({
   function navigatePage(p: number) {
     setManualPage(true);
     setPage(p);
+  }
+
+  function followGridLatest() {
+    setManualPage(false);
+    setPage(pageCount - 1);
+  }
+
+  // unknown-total paging: "Older" walks back in history (higher offset),
+  // "Newer" walks toward the tail. offset 0 is the newest window.
+  function goOlder() {
+    setManualPage(true);
+    setLivePage((p) => p + 1);
+  }
+  function goNewer() {
+    const next = Math.max(0, livePage - 1);
+    setLivePage(next);
+    if (next === 0) setManualPage(false); // back at the tail → resume following
+  }
+  function followLiveLatest() {
+    setManualPage(false);
+    setLivePage(0);
   }
 
   function onCellClick(seq: number, shift: boolean) {
@@ -245,7 +290,9 @@ export function DeliveryMonitor({
           {live && manualPage && (
             <button
               className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-[11px] underline underline-offset-2 transition-colors"
-              onClick={() => { setManualPage(false); setPage(pageCount - 1); }}
+              onClick={() =>
+                knownTotal ? followGridLatest() : followLiveLatest()
+              }
             >
               Follow latest
             </button>
@@ -395,7 +442,46 @@ export function DeliveryMonitor({
           )}
         </div>
 
-        {/* ── pagination ──────────────────────────────────────────────── */}
+        {/* ── pagination (unknown total: watch/CDC offset window) ─────── */}
+        {!knownTotal && (livePage > 0 || !livePageShort) && sequences.length > 0 && (
+          <div className="text-muted-foreground flex items-center gap-2 border-t px-3 py-1.5 text-xs">
+            <span>
+              {followingLatest ? (
+                'latest deliveries'
+              ) : (
+                <>
+                  older window
+                  <span className="mx-1 opacity-40">·</span>
+                  offset {livePage * LIVE_PAGE_SIZE}
+                </>
+              )}
+            </span>
+            <div className="ml-auto flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7"
+                disabled={livePage === 0}
+                onClick={goNewer}
+              >
+                <ChevronLeft className="mr-1 h-4 w-4" />
+                Newer
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7"
+                disabled={livePageShort}
+                onClick={goOlder}
+              >
+                Older
+                <ChevronRight className="ml-1 h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* ── pagination (known total: replay run grid) ───────────────── */}
         {cellCount != null && pageCount > 1 && (
           <div className="text-muted-foreground flex items-center gap-2 border-t px-3 py-1.5 text-xs">
             <span>
