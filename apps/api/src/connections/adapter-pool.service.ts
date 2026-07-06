@@ -18,6 +18,8 @@ interface PoolEntry {
 @Injectable()
 export class AdapterPoolService implements OnModuleDestroy {
   private readonly entries = new Map<string, PoolEntry>();
+  /** in-flight opens, so concurrent requests share one connect instead of leaking */
+  private readonly pending = new Map<string, Promise<DatabaseAdapter>>();
   private readonly sweepTimer: NodeJS.Timeout;
 
   constructor(private readonly store: ConnectionStoreService) {
@@ -65,12 +67,29 @@ export class AdapterPoolService implements OnModuleDestroy {
       existing.lastUsedAt = Date.now();
       return existing.adapter;
     }
-    if (existing) {
-      await existing.adapter.close().catch(() => {});
-      this.entries.delete(key);
-    }
 
-    const adapter = createAdapter({ ...config, database: effectiveDb });
+    // join an in-flight open instead of racing it: two concurrent misses would
+    // otherwise both connect and the loser's adapter would leak unreferenced
+    const inFlight = this.pending.get(key);
+    if (inFlight) return inFlight;
+
+    const open = this.open(key, { ...config, database: effectiveDb }).finally(
+      () => this.pending.delete(key),
+    );
+    this.pending.set(key, open);
+    return open;
+  }
+
+  private async open(
+    key: string,
+    config: ConnectionConfig,
+  ): Promise<DatabaseAdapter> {
+    const stale = this.entries.get(key);
+    if (stale) {
+      this.entries.delete(key);
+      await stale.adapter.close().catch(() => {});
+    }
+    const adapter = createAdapter(config);
     await adapter.connect();
     this.entries.set(key, {
       adapter,
@@ -108,11 +127,19 @@ export class AdapterPoolService implements OnModuleDestroy {
    * after the connection is edited or deleted
    */
   async evict(id: string): Promise<void> {
-    for (const [key, entry] of this.entries) {
-      if (key === id || key.startsWith(`${id}::`)) {
-        await entry.adapter.close().catch(() => {});
-        this.entries.delete(key);
-      }
-    }
+    const prefix = `${id}::`;
+    // settle in-flight opens first so their adapters can't escape the evict
+    const opening = [...this.pending.entries()]
+      .filter(([key]) => key.startsWith(prefix))
+      .map(([, p]) => p.catch(() => {}));
+    await Promise.all(opening);
+
+    const targets = [...this.entries.entries()].filter(([key]) =>
+      key.startsWith(prefix),
+    );
+    for (const [key] of targets) this.entries.delete(key);
+    await Promise.all(
+      targets.map(([, entry]) => entry.adapter.close().catch(() => {})),
+    );
   }
 }

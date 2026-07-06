@@ -1,11 +1,11 @@
 /**
- * persistent store for saved connections, backed by Prisma (SQLite).
+ * persistent store for saved connections, backed by Prisma (PostgreSQL).
  * secrets (password, connection string) are encrypted at rest. callers get a
  * redacted view unless they explicitly resolve the full config
  */
 import { randomUUID } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
-import type { Connection as ConnectionRow } from '@prisma/client';
+import { Injectable, Logger } from '@nestjs/common';
+import { Prisma, type Connection as ConnectionRow } from '@prisma/client';
 import {
   type ConnectionConfig,
   type ConnectionInput,
@@ -19,10 +19,22 @@ const REDACTED = '********';
 
 @Injectable()
 export class ConnectionStoreService {
+  private readonly logger = new Logger('ConnectionStore');
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly crypto: CryptoService,
   ) {}
+
+  /** corrupt options must not make the whole connection un-listable */
+  private parseOptions(id: string, json: string): Record<string, unknown> | undefined {
+    try {
+      return JSON.parse(json) as Record<string, unknown>;
+    } catch {
+      this.logger.warn(`Connection ${id} has unparseable optionsJson — ignoring it`);
+      return undefined;
+    }
+  }
 
   private toConfig(row: ConnectionRow, includeSecrets: boolean): ConnectionConfig {
     return {
@@ -49,7 +61,7 @@ export class ConnectionStoreService {
             ? REDACTED
             : undefined,
       options: row.optionsJson
-        ? (JSON.parse(row.optionsJson) as Record<string, unknown>)
+        ? this.parseOptions(row.id, row.optionsJson)
         : undefined,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
@@ -119,27 +131,45 @@ export class ConnectionStoreService {
           ? this.crypto.encrypt(input.connectionString)
           : null;
 
-    const row = await this.prisma.connection.update({
-      where: { id },
-      data: {
-        name: input.name,
-        engine: input.engine,
-        color: input.color ?? null,
-        host: input.host ?? null,
-        port: input.port ?? null,
-        user: input.user ?? null,
-        passwordEnc,
-        database: input.database ?? null,
-        ssl: input.ssl ?? false,
-        connectionStringEnc,
-        optionsJson: input.options ? JSON.stringify(input.options) : null,
-      },
-    });
-    return this.toConfig(row, false);
+    try {
+      const row = await this.prisma.connection.update({
+        where: { id },
+        data: {
+          name: input.name,
+          engine: input.engine,
+          color: input.color ?? null,
+          host: input.host ?? null,
+          port: input.port ?? null,
+          user: input.user ?? null,
+          passwordEnc,
+          database: input.database ?? null,
+          ssl: input.ssl ?? false,
+          connectionStringEnc,
+          optionsJson: input.options ? JSON.stringify(input.options) : null,
+        },
+      });
+      return this.toConfig(row, false);
+    } catch (err) {
+      throw this.mapMissing(err, id);
+    }
   }
 
   async remove(id: string): Promise<void> {
-    await this.getRow(id); // 404s if missing
-    await this.prisma.connection.delete({ where: { id } });
+    try {
+      await this.prisma.connection.delete({ where: { id } });
+    } catch (err) {
+      throw this.mapMissing(err, id);
+    }
+  }
+
+  /** a concurrent delete between read and write should 404, not 500 */
+  private mapMissing(err: unknown, id: string): unknown {
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === 'P2025'
+    ) {
+      return new NotFoundError(`Connection "${id}" not found`);
+    }
+    return err;
   }
 }

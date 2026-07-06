@@ -5,7 +5,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { Injectable, type OnModuleInit, Logger } from '@nestjs/common';
-import type { Workspace as WorkspaceRow } from '@prisma/client';
+import { Prisma, type Workspace as WorkspaceRow } from '@prisma/client';
 import {
   type Workspace,
   type WorkspaceInputDTO,
@@ -70,12 +70,15 @@ export class WorkspaceStoreService implements OnModuleInit {
   }
 
   async update(id: string, input: WorkspaceInputDTO): Promise<Workspace> {
-    await this.get(id); // 404 if missing
-    const row = await this.prisma.workspace.update({
-      where: { id },
-      data: { name: input.name, color: input.color ?? null },
-    });
-    return this.toWorkspace(row);
+    try {
+      const row = await this.prisma.workspace.update({
+        where: { id },
+        data: { name: input.name, color: input.color ?? null },
+      });
+      return this.toWorkspace(row);
+    } catch (err) {
+      throw this.mapMissing(err, id);
+    }
   }
 
   // deleting cascades to the workspace's connections and hooks (and their runs).
@@ -84,7 +87,21 @@ export class WorkspaceStoreService implements OnModuleInit {
     if (id === DEFAULT_WORKSPACE_ID) {
       throw new BadRequestError('The default workspace cannot be deleted.');
     }
-    await this.get(id);
-    await this.prisma.workspace.delete({ where: { id } });
+    try {
+      await this.prisma.workspace.delete({ where: { id } });
+    } catch (err) {
+      throw this.mapMissing(err, id);
+    }
+  }
+
+  /** a concurrent delete between read and write should 404, not 500 */
+  private mapMissing(err: unknown, id: string): unknown {
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === 'P2025'
+    ) {
+      return new NotFoundError(`Workspace "${id}" not found`);
+    }
+    return err;
   }
 }

@@ -7,7 +7,7 @@
  */
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { runtimeConfig } from './runtime-config';
 
 const ALGO = 'aes-256-gcm';
@@ -40,6 +40,12 @@ export class CryptoService {
     }
 
     const key = randomBytes(32);
+    // fine for local dev, but the key then lives beside the data it protects —
+    // a backup of the data dir carries both. production must set the env key
+    new Logger('Crypto').warn(
+      `DATABRIDGE_MASTER_KEY is not set — generated a key at ${runtimeConfig.keyFile}. ` +
+        'Set DATABRIDGE_MASTER_KEY in production.',
+    );
     writeFileSync(runtimeConfig.keyFile, key.toString('base64'), {
       mode: 0o600,
     });
