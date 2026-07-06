@@ -29,9 +29,31 @@ import type {
   UpdateRowParams,
   UpsertRowParams,
 } from '../types';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { BadRequestError } from '../../errors';
 
+/**
+ * a single database connection borrowed from the driver pool for the lifetime
+ * of a transaction. `run` executes one parameterized statement on THIS
+ * connection (so every mutation inside a transaction shares it); the lifecycle
+ * hooks issue the transaction control statements and hand the connection back.
+ */
+export interface SqlTransactionConnection {
+  run(sql: string, params: unknown[]): Promise<QueryResult>;
+  begin(): Promise<void>;
+  commit(): Promise<void>;
+  rollback(): Promise<void>;
+  release(): void;
+}
+
 const RESTORE_BATCH = 500;
+
+/**
+ * rows fetched per round-trip when streaming a table out for backup. keeps the
+ * working set bounded (this many rows in memory at once) instead of loading a
+ * whole table via one `SELECT *`, which OOMs on multi-GB tables.
+ */
+const BACKUP_FETCH_BATCH = 1000;
 
 /** reject identifiers that aren't safe to embed in DDL (which can't be bound) */
 export function assertSafeIdentifier(name: string): string {
@@ -124,11 +146,80 @@ export abstract class BaseSqlAdapter implements DatabaseAdapter {
    */
   protected abstract placeholder(index: number): string;
 
-  /** run a parameterized statement and return a normalized result */
-  protected abstract runSql(
+  /**
+   * run a parameterized statement on the driver pool and return a normalized
+   * result. subclasses implement ONLY this pooled path; the transaction-aware
+   * routing lives in {@link runSql}.
+   */
+  protected abstract execPooled(
     sql: string,
     params: unknown[],
   ): Promise<QueryResult>;
+
+  /**
+   * borrow one connection from the driver pool for a transaction. optional:
+   * an engine that leaves it undefined simply doesn't support
+   * {@link withTransaction} (and its {@link AdapterCapabilities.transactions}
+   * must be false). the returned connection must issue every statement on the
+   * SAME underlying socket so BEGIN/…/COMMIT are one transaction.
+   */
+  protected acquireTransactionConnection?(): Promise<SqlTransactionConnection>;
+
+  /**
+   * the connection bound to the currently-running transaction, if any.
+   * scoped per async call-tree (NOT per instance) so concurrent deliveries
+   * sharing one pooled adapter never cross-wire onto each other's transaction.
+   */
+  private readonly txStore =
+    new AsyncLocalStorage<SqlTransactionConnection>();
+
+  /**
+   * run a parameterized statement. when called inside {@link withTransaction}
+   * it routes to that transaction's dedicated connection; otherwise it goes to
+   * the pool. every shared mutation helper (insertRow/upsertRow/deleteRow/…)
+   * funnels through here, so wrapping a batch in `withTransaction` makes the
+   * whole batch atomic with no changes to those helpers.
+   */
+  protected async runSql(
+    sql: string,
+    params: unknown[],
+  ): Promise<QueryResult> {
+    const tx = this.txStore.getStore();
+    return tx ? tx.run(sql, params) : this.execPooled(sql, params);
+  }
+
+  /**
+   * run `fn` inside a real BEGIN/COMMIT/ROLLBACK on a single pooled connection.
+   * inner adapter calls (which route through {@link runSql}) automatically use
+   * that same connection via async-local scoping, so the batch is atomic: a
+   * failure rolls the whole batch back, so a retry can't double-apply rows that
+   * already committed. only available when the engine can lend a dedicated
+   * connection ({@link acquireTransactionConnection}); callers gate on
+   * `capabilities.transactions`.
+   */
+  async withTransaction<T>(fn: () => Promise<T>): Promise<T> {
+    if (!this.acquireTransactionConnection) {
+      // no dedicated-connection support: run inline (no atomicity guarantee)
+      return fn();
+    }
+    // a nested withTransaction reuses the outer transaction's connection rather
+    // than opening a second one that would deadlock or commit independently
+    const existing = this.txStore.getStore();
+    if (existing) return fn();
+
+    const conn = await this.acquireTransactionConnection();
+    try {
+      await conn.begin();
+      const result = await this.txStore.run(conn, fn);
+      await conn.commit();
+      return result;
+    } catch (err) {
+      await conn.rollback().catch(() => undefined);
+      throw err;
+    } finally {
+      conn.release();
+    }
+  }
 
   /** LIKE keyword for case-insensitive matching (Postgres → ILIKE) */
   protected likeKeyword(): string {
@@ -506,6 +597,47 @@ export abstract class BaseSqlAdapter implements DatabaseAdapter {
     return tables;
   }
 
+  /**
+   * page through a table in fixed-size batches, invoking `onBatch` per page and
+   * freeing each page before fetching the next. memory stays bounded to
+   * {@link BACKUP_FETCH_BATCH} rows rather than the whole table. paging is by
+   * `LIMIT/OFFSET` (bounds proven-integer, so safe to interpolate), ordered by
+   * the primary key when one exists to keep the window stable across pages.
+   */
+  private async forEachRowBatch(
+    table: TableSchema,
+    onBatch: (rows: Array<Record<string, unknown>>) => void,
+  ): Promise<void> {
+    const target = this.qualify(table.name, table.schema);
+    const orderSql = table.primaryKey.length
+      ? ` ORDER BY ${table.primaryKey.map((c) => this.quoteIdent(c)).join(', ')}`
+      : '';
+    let offset = 0;
+    for (;;) {
+      const res = await this.runSql(
+        `SELECT * FROM ${target}${orderSql} ` +
+          `LIMIT ${BACKUP_FETCH_BATCH} OFFSET ${offset}`,
+        [],
+      );
+      onBatch(res.rows);
+      if (res.rows.length < BACKUP_FETCH_BATCH) break;
+      offset += res.rows.length;
+    }
+  }
+
+  /**
+   * dump the database to a portable JSON document or a `.sql` script.
+   *
+   * memory is bounded to {@link BACKUP_FETCH_BATCH} rows: each table is streamed
+   * out in fixed-size pages rather than loaded whole via one `SELECT *`, so a
+   * multi-GB table no longer OOMs the process (and takes down live bridges).
+   * for the JSON format the assembled document still holds every row before it
+   * is stringified — the residual ceiling is the total row set, not two copies
+   * of it, because rows are appended incrementally and each fetched page is
+   * freed after being encoded. the `sql` format is fully bounded (each page is
+   * serialized to text and the rows dropped). the OUTPUT is unchanged from the
+   * previous single-`SELECT *` implementation, so existing restores still work.
+   */
   async backup(opts: BackupOptions): Promise<string> {
     const { database } = await this.getSchema();
     const tables = await this.targetTables(opts);
@@ -520,16 +652,16 @@ export abstract class BaseSqlAdapter implements DatabaseAdapter {
         tables: [],
       };
       for (const t of tables) {
-        const res = await this.runSql(
-          `SELECT * FROM ${this.qualify(t.name, t.schema)}`,
-          [],
-        );
+        const rows: Array<Record<string, unknown>> = [];
+        await this.forEachRowBatch(t, (batch) => {
+          for (const row of batch) rows.push(encodeRowForBackup(row));
+        });
         doc.tables.push({
           name: t.name,
           schema: t.schema,
           primaryKey: t.primaryKey,
           columns: t.columns.map((c) => c.name),
-          rows: res.rows.map(encodeRowForBackup),
+          rows,
         });
       }
       return JSON.stringify(doc, null, 2);
@@ -544,19 +676,18 @@ export abstract class BaseSqlAdapter implements DatabaseAdapter {
     ];
     for (const t of tables) {
       out.push(this.createTableDump(t), ``);
-      const res = await this.runSql(
-        `SELECT * FROM ${this.qualify(t.name, t.schema)}`,
-        [],
-      );
-      if (res.rows.length === 0) continue;
       const cols = t.columns.map((c) => c.name);
       const colSql = cols.map((c) => this.quoteIdent(c)).join(', ');
       const target = this.qualify(t.name, t.schema);
-      for (const row of res.rows) {
-        const values = cols.map((c) => this.sqlLiteral(row[c])).join(', ');
-        out.push(`INSERT INTO ${target} (${colSql}) VALUES (${values});`);
-      }
-      out.push(``);
+      let wrote = false;
+      await this.forEachRowBatch(t, (batch) => {
+        for (const row of batch) {
+          const values = cols.map((c) => this.sqlLiteral(row[c])).join(', ');
+          out.push(`INSERT INTO ${target} (${colSql}) VALUES (${values});`);
+          wrote = true;
+        }
+      });
+      if (wrote) out.push(``);
     }
     return out.join('\n');
   }

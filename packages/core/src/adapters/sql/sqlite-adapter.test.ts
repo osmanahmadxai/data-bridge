@@ -227,6 +227,74 @@ describe('SqliteAdapter', () => {
     const dump = await adapter.backup({ format: 'sql', tables: ['blobs'] });
     expect(dump).toContain("X'6869'");
   });
+
+  it('streams a table larger than the backup fetch batch (>1000 rows)', async () => {
+    // exceeds BACKUP_FETCH_BATCH (1000) to exercise multi-page streaming: every
+    // row must appear exactly once with no gaps or duplicates across pages
+    await adapter.query('CREATE TABLE big (id INTEGER PRIMARY KEY, v TEXT)');
+    const total = 2050;
+    for (let i = 1; i <= total; i++) {
+      await adapter.insertRow({ table: 'big', values: { id: i, v: `row-${i}` } });
+    }
+
+    const json = await adapter.backup({ format: 'json', tables: ['big'] });
+    const doc = JSON.parse(json) as {
+      tables: Array<{ name: string; rows: Array<{ id: number; v: string }> }>;
+    };
+    const table = doc.tables.find((t) => t.name === 'big')!;
+    expect(table.rows).toHaveLength(total);
+    const ids = new Set(table.rows.map((r) => r.id));
+    expect(ids.size).toBe(total);
+    expect(table.rows.find((r) => r.id === 1)?.v).toBe('row-1');
+    expect(table.rows.find((r) => r.id === total)?.v).toBe(`row-${total}`);
+
+    // and it restores byte-compatibly through the existing restore path
+    await adapter.dropTable('big');
+    const restored = await adapter.restore(json, 'json');
+    expect(restored.rows).toBe(total);
+    const back = await adapter.browse({ table: 'big', limit: 1, offset: 0 });
+    expect(back.total).toBe(total);
+  });
+
+  it('commits a withTransaction batch atomically', async () => {
+    await adapter.withTransaction!(async () => {
+      await adapter.insertRow({
+        table: 'users',
+        values: { id: 100, name: 'Tx One' },
+      });
+      await adapter.insertRow({
+        table: 'users',
+        values: { id: 101, name: 'Tx Two' },
+      });
+    });
+    const res = await adapter.browse({ table: 'users', limit: 50, offset: 0 });
+    expect(res.rows.some((r) => r.id === 100)).toBe(true);
+    expect(res.rows.some((r) => r.id === 101)).toBe(true);
+  });
+
+  it('rolls back a withTransaction batch when a row fails', async () => {
+    const before = (await adapter.browse({ table: 'users', limit: 50, offset: 0 }))
+      .total;
+    await expect(
+      adapter.withTransaction!(async () => {
+        await adapter.insertRow({
+          table: 'users',
+          values: { id: 200, name: 'Committed?' },
+        });
+        // duplicate primary key → the statement throws, aborting the batch
+        await adapter.insertRow({
+          table: 'users',
+          values: { id: 200, name: 'Dup' },
+        });
+      }),
+    ).rejects.toThrow();
+
+    // the first insert must NOT have persisted (whole batch rolled back), so a
+    // retry can't double-apply it
+    const res = await adapter.browse({ table: 'users', limit: 50, offset: 0 });
+    expect(res.total).toBe(before);
+    expect(res.rows.some((r) => r.id === 200)).toBe(false);
+  });
 });
 
 describe('assertSafeDefaultValue', () => {

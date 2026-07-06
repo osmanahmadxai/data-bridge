@@ -20,6 +20,7 @@ import {
   assertSafeDefaultValue,
   assertSafeIdentifier,
   BaseSqlAdapter,
+  type SqlTransactionConnection,
 } from './base-sql-adapter';
 
 /**
@@ -95,11 +96,12 @@ export class SqliteAdapter extends BaseSqlAdapter {
     return '?';
   }
 
-  protected override async runSql(
+  /** run one statement on a given db handle (shared by pooled + tx paths) */
+  private runOnDb(
+    db: Database.Database,
     sql: string,
     params: unknown[],
-  ): Promise<QueryResult> {
-    const db = this.getDb();
+  ): QueryResult {
     const started = performance.now();
     const bound = params.map(coerceSqliteParam);
     try {
@@ -138,6 +140,36 @@ export class SqliteAdapter extends BaseSqlAdapter {
     } catch (err) {
       throw new QueryError((err as Error).message, { sql });
     }
+  }
+
+  protected override async execPooled(
+    sql: string,
+    params: unknown[],
+  ): Promise<QueryResult> {
+    return this.runOnDb(this.getDb(), sql, params);
+  }
+
+  /**
+   * SQLite is a single synchronous connection, so the "borrowed connection" is
+   * just the same db handle guarded by explicit BEGIN/COMMIT/ROLLBACK. this is
+   * a real transaction (better-sqlite3 executes statements synchronously, so no
+   * other statement interleaves between BEGIN and COMMIT within this process).
+   */
+  protected override async acquireTransactionConnection(): Promise<SqlTransactionConnection> {
+    const db = this.getDb();
+    return {
+      run: async (sql, params) => this.runOnDb(db, sql, params),
+      begin: async () => {
+        db.prepare('BEGIN').run();
+      },
+      commit: async () => {
+        db.prepare('COMMIT').run();
+      },
+      rollback: async () => {
+        if (db.inTransaction) db.prepare('ROLLBACK').run();
+      },
+      release: () => undefined,
+    };
   }
 
   async listDatabases(): Promise<string[]> {
