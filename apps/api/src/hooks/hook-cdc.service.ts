@@ -30,6 +30,7 @@ import {
   type HookRun,
 } from '@data-bridge/core';
 import { randomUUID } from 'node:crypto';
+import { AdapterPoolService } from '../connections/adapter-pool.service';
 import { ConnectionStoreService } from '../connections/connection-store.service';
 import { PrismaService } from '../common/prisma.service';
 import { HookRunService } from './hook-run.service';
@@ -51,6 +52,14 @@ interface Stream {
   seq: number;
   /** highest cursor already processed, guards against replay dupes on reconnect */
   watermark: string | null;
+  /**
+   * per-hook serialization chain: providers may emit concurrently (Redis fires
+   * events fire-and-forget), but changes for one hook must process strictly in
+   * order or concurrent handlers would reuse the same sequence number
+   */
+  pending: Promise<void>;
+  /** the source's primary-key columns, so rowKeys stores keys, not every value */
+  primaryKey: string[] | null;
 }
 
 /** read the persisted resume cursor from a run's cursorJson (legacy `lsn` ok) */
@@ -74,6 +83,7 @@ export class HookCdcService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly store: HookStoreService,
     private readonly connStore: ConnectionStoreService,
+    private readonly pool: AdapterPoolService,
     private readonly sink: HookSinkService,
     private readonly runs: HookRunService,
     @Inject(CDC_PROVIDERS) providers: CdcProvider[],
@@ -222,37 +232,98 @@ export class HookCdcService implements OnModuleInit, OnModuleDestroy {
     startSeq: number,
     startCursor: string | null,
   ): Promise<void> {
-    const stream: Stream = { handle: { stop: async () => undefined }, provider, runId, seq: startSeq, watermark: startCursor };
+    // two live streams for one hook would double-deliver every change
+    if (this.streams.has(hookId)) {
+      throw new ConflictError('This hook already has a live stream. Stop it first.');
+    }
+    const stream: Stream = {
+      handle: { stop: async () => undefined },
+      provider,
+      runId,
+      seq: startSeq,
+      watermark: startCursor,
+      pending: Promise.resolve(),
+      primaryKey: await this.resolvePrimaryKey(hook),
+    };
     this.streams.set(hookId, stream);
 
-    const handle = await provider.startStream({
-      hookId,
-      hook,
-      conn,
-      fromCursor: startCursor,
-      handlers: {
-        onChange: (change) => this.handleChange(hookId, hook, change),
-        onError: (err) => this.logger.warn(`CDC stream error for ${hookId}: ${err.message}`),
-      },
-    });
+    let handle: CdcStreamHandle;
+    try {
+      handle = await provider.startStream({
+        hookId,
+        hook,
+        conn,
+        fromCursor: startCursor,
+        handlers: {
+          onChange: (change) => this.handleChange(hookId, hook, change),
+          onError: (err) => this.logger.warn(`CDC stream error for ${hookId}: ${err.message}`),
+        },
+      });
+    } catch (err) {
+      // a failed start must not strand the run as 'running' behind a dead
+      // placeholder (that would be a permanent ConflictError on retry)
+      if (this.streams.get(hookId) === stream) this.streams.delete(hookId);
+      await this.runs.finalize(runId, 'failed', (err as Error).message).catch(() => undefined);
+      throw err;
+    }
+    // stop() may have raced us during startStream: it removed the entry and
+    // "stopped" the placeholder, so close the real handle instead of leaking it
+    if (this.streams.get(hookId) !== stream) {
+      await handle.stop().catch(() => undefined);
+      return;
+    }
     // the provider may have already begun emitting, only replace the placeholder
     stream.handle = handle;
   }
 
+  /** the source's primary-key columns (best-effort), cached on the stream */
+  private async resolvePrimaryKey(hook: ResolvedHook): Promise<string[] | null> {
+    if (hook.source.kind !== 'table') return null;
+    const src = hook.source;
+    try {
+      const page = await this.pool.withAdapter(src.connectionId, src.database, (a) =>
+        a.browse({ schema: src.schema, table: src.table, limit: 1, offset: 0 }),
+      );
+      return page.primaryKey.length ? page.primaryKey : null;
+    } catch {
+      return null; // unknown, deliveries fall back to null rowKeys
+    }
+  }
+
+  /**
+   * providers may emit concurrently (Redis resolves values out-of-band), so
+   * changes for one hook are queued onto the stream's promise chain and
+   * processed strictly in order. returning the chain tail keeps backpressure
+   * intact for providers that await onChange.
+   */
+  private handleChange(hookId: string, hook: ResolvedHook, change: CdcChange): Promise<void> {
+    const stream = this.streams.get(hookId);
+    if (!stream) return Promise.resolve();
+    stream.pending = stream.pending
+      .then(() => this.processChange(hookId, hook, stream, change))
+      .catch((err) => {
+        // processChange handles its own failures; this only guards the chain
+        this.logger.error(`CDC change chain broke for ${hookId}: ${(err as Error).message}`);
+      });
+    return stream.pending;
+  }
+
   /** for one change: dedupe, render, deliver, record, persist cursor */
-  private async handleChange(
+  private async processChange(
     hookId: string,
     hook: ResolvedHook,
+    stream: Stream,
     change: CdcChange,
   ): Promise<void> {
-    const stream = this.streams.get(hookId);
-    if (!stream || hook.source.kind !== 'table') return;
+    // the stream may have been stopped/replaced while queued behind the chain
+    if (this.streams.get(hookId) !== stream || hook.source.kind !== 'table') return;
     // strict exactly-once: never re-process a position we've already done
     // (durable engines replay from the last acked cursor after a reconnect)
     if (!stream.provider.cursorAfter(change.cursor, stream.watermark)) return;
 
     const seq = stream.seq;
     const now = new Date().toISOString();
+    const rowKeys = stream.primaryKey ? stream.primaryKey.map((c) => change.row[c]) : null;
     // key on the cursor (stable per change) so an at-least-once re-delivery after
     // a reconnect carries the SAME Idempotency-Key for the receiver to dedupe
     const idem =
@@ -260,28 +331,58 @@ export class HookCdcService implements OnModuleInit, OnModuleDestroy {
         ? `${stream.runId}:${change.cursor}`
         : undefined;
     const signal = new AbortController().signal;
-    // the operation drives both the {{$op}} token (HTTP) and insert/upsert vs
-    // delete routing (database destinations)
-    const { outcome } = await this.sink.deliver(
-      hook,
-      [change.row],
-      { table: hook.source.table, now, startIndex: seq, op: change.op as CdcOperation },
-      signal,
-      idem,
-    );
+    try {
+      // the operation drives both the {{$op}} token (HTTP) and insert/upsert vs
+      // delete routing (database destinations)
+      const { outcome } = await this.sink.deliver(
+        hook,
+        [change.row],
+        { table: hook.source.table, now, startIndex: seq, op: change.op as CdcOperation },
+        signal,
+        idem,
+      );
 
-    const pkVals = Object.values(change.row);
-    await this.runs.recordDelivery(
-      stream.runId,
-      { sequence: seq, rowIndex: seq, rowCount: 1, rowKeys: pkVals.length ? pkVals : null },
-      outcome,
-    );
-    stream.seq = seq + 1;
-    stream.watermark = change.cursor;
-    await this.prisma.hookRun.update({
-      where: { id: stream.runId },
-      data: { cursorOffset: stream.seq, cursorJson: JSON.stringify({ cursor: change.cursor }) },
-    });
+      await this.runs.recordDelivery(
+        stream.runId,
+        { sequence: seq, rowIndex: seq, rowCount: 1, rowKeys },
+        outcome,
+      );
+      stream.seq = seq + 1;
+      stream.watermark = change.cursor;
+      await this.prisma.hookRun.update({
+        where: { id: stream.runId },
+        data: { cursorOffset: stream.seq, cursorJson: JSON.stringify({ cursor: change.cursor }) },
+      });
+    } catch (err) {
+      // a transient pipeline error (Prisma/pool hiccup) must leave a trace: the
+      // event becomes a FAILED delivery row, visible in the timeline + retryable
+      const message = err instanceof Error ? err.message : String(err);
+      try {
+        await this.runs.recordDelivery(
+          stream.runId,
+          { sequence: seq, rowIndex: seq, rowCount: 1, rowKeys },
+          {
+            status: 'failed',
+            httpStatus: null,
+            attempts: 1,
+            error: message,
+            requestBody: null,
+            responseBody: null,
+            durationMs: 0,
+          },
+        );
+        stream.seq = seq + 1;
+        stream.watermark = change.cursor;
+        this.logger.warn(`CDC delivery for ${hookId} failed and was recorded: ${message}`);
+      } catch {
+        // can't even record the failure: stop instead of silently acking away
+        this.logger.error(
+          `CDC pipeline for ${hookId} is failing and the failure could not be recorded — stopping the stream: ${message}`,
+        );
+        await this.teardown(hookId).catch(() => undefined);
+        await this.runs.finalize(stream.runId, 'failed', message).catch(() => undefined);
+      }
+    }
   }
 
   /* ----- boot recovery ----- */

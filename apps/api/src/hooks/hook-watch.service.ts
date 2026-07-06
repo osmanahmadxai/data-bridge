@@ -86,7 +86,18 @@ export class HookWatchService implements OnModuleInit {
       latest && latest.cursorJson
         ? await this.prisma.hookRun.update({
             where: { id: latest.id },
-            data: { status: 'running', error: null, finishedAt: null },
+            data: this.cursorMatches(hook, latest.cursorJson)
+              ? { status: 'running', error: null, finishedAt: null }
+              : {
+                  // the strategy changed since the cursor was persisted (or the
+                  // cursor is corrupt): rebuild it instead of resuming a
+                  // mismatched cursor that would brick or mis-filter the bridge
+                  status: 'running',
+                  error: null,
+                  finishedAt: null,
+                  cursorJson: JSON.stringify(await this.initialCursor(hook)),
+                  configSnapshotJson: await this.store.snapshotJson(hookId),
+                },
           })
         : await this.prisma.hookRun.create({
             data: {
@@ -106,6 +117,17 @@ export class HookWatchService implements OnModuleInit {
     await this.schedule(hookId, fast);
     this.logger.log(`Listening on hook ${hookId} (run ${run.id})`);
     return this.runs.getRun(hookId, run.id);
+  }
+
+  /** true when a persisted cursor parses and matches the hook's CURRENT strategy */
+  private cursorMatches(hook: ResolvedHook, cursorJson: string): boolean {
+    if (hook.trigger.kind !== 'watch') return false;
+    try {
+      const cursor = JSON.parse(cursorJson) as WatchCursor;
+      return cursor.strategy === watchStrategySchema.parse(hook.trigger.strategy).strategy;
+    } catch {
+      return false;
+    }
   }
 
   async stop(hookId: string): Promise<HookRun | null> {
@@ -208,6 +230,14 @@ export class HookWatchService implements OnModuleInit {
         outcome,
       );
       seq++;
+      // checkpoint the sequence immediately: a crash mid-batch must never reuse
+      // a sequence (the upsert would overwrite a delivered row with new data).
+      // the cursorJson itself only advances after the whole page (below), so a
+      // crash re-fetches the same rows but delivers them under fresh sequences
+      await this.prisma.hookRun.update({
+        where: { id: run.id },
+        data: { cursorOffset: seq },
+      });
       if (hook.delivery.minDelayMs) await sleep(hook.delivery.minDelayMs);
     }
 
@@ -226,6 +256,9 @@ export class HookWatchService implements OnModuleInit {
    * any DB-side changes.
    */
   private async adapt(hookId: string, idleMs: number, hadRows: boolean): Promise<void> {
+    // stop() may have raced this poll: re-registering the scheduler here would
+    // resurrect a stopped watcher for one extra fire
+    if (!this.scheduledEvery.has(hookId)) return;
     const fast = Math.min(HookWatchService.FAST_MS, idleMs);
     const streak = hadRows ? 0 : (this.emptyStreak.get(hookId) ?? 0) + 1;
     this.emptyStreak.set(hookId, streak);

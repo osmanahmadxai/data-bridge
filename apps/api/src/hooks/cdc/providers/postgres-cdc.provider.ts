@@ -21,11 +21,13 @@ import type {
 import { LogicalReplicationService, PgoutputPlugin } from 'pg-logical-replication';
 import { AdapterPoolService } from '../../../connections/adapter-pool.service';
 import type { ResolvedHook } from '../../hooks.types';
-import type {
-  CdcChange,
-  CdcProvider,
-  CdcStreamContext,
-  CdcStreamHandle,
+import {
+  backoffMs,
+  delay,
+  type CdcChange,
+  type CdcProvider,
+  type CdcStreamContext,
+  type CdcStreamHandle,
 } from '../cdc-provider';
 
 /** compare Postgres LSNs ("H/L" hex). true if `a` is strictly after `b` */
@@ -120,22 +122,23 @@ export class PostgresCdcProvider implements CdcProvider {
 
     await this.pool.withAdapter(src.connectionId, src.database, async (a) => {
       // check the publication exists and points at the correct table. if the
-      // user edited the hook to change the source table we have to update the
-      // publication, otherwise we'd silently stream the old table's changes
+      // user edited the hook to change the source table OR schema we have to
+      // update the publication, otherwise we'd silently stream the old table
       const pubInfo = await a.query(
-        `select pub.pubname, cls.relname as tablename
+        `select pt.schemaname, pt.tablename
          from pg_publication pub
          join pg_publication_tables pt on pt.pubname = pub.pubname
-         join pg_class cls on cls.relname = pt.tablename
          where pub.pubname = $1`,
         [pub],
       );
-      const existingTable = (pubInfo.rows[0] as { tablename?: string } | undefined)?.tablename;
+      const existing = pubInfo.rows[0] as
+        | { schemaname?: string; tablename?: string }
+        | undefined;
       if (pubInfo.rows.length === 0) {
         await a.query(`CREATE PUBLICATION ${this.quoteIdent(pub)} FOR TABLE ${target}`);
-      } else if (existingTable !== src.table) {
+      } else if (existing?.schemaname !== schema || existing?.tablename !== src.table) {
         await a.query(`ALTER PUBLICATION ${this.quoteIdent(pub)} SET TABLE ${target}`);
-        this.logger.log(`Updated CDC publication "${pub}" to target table "${src.table}"`);
+        this.logger.log(`Updated CDC publication "${pub}" to target table "${schema}"."${src.table}"`);
       }
 
       const hasSlot = await a.query(
@@ -153,12 +156,32 @@ export class PostgresCdcProvider implements CdcProvider {
     const slot = this.slotName(hookId);
     const pub = this.pubName(hookId);
     await this.pool.withAdapter(hook.source.connectionId, hook.source.database, async (a) => {
-      await a
-        .query(
-          `select pg_drop_replication_slot($1) where exists (select 1 from pg_replication_slots where slot_name = $1 and active = false)`,
-          [slot],
-        )
-        .catch(() => undefined);
+      // an orphaned slot pins WAL forever and eventually fills the source's
+      // disk. the walsender often still holds the slot "active" right after
+      // our client closes, so retry: kick any holder off, then drop.
+      let dropped = false;
+      let lastError = '';
+      for (let attempt = 0; attempt < 5 && !dropped; attempt++) {
+        if (attempt > 0) await delay(backoffMs(attempt - 1, 250, 2000));
+        try {
+          await a.query(
+            `select pg_terminate_backend(active_pid) from pg_replication_slots where slot_name = $1 and active`,
+            [slot],
+          );
+          await a.query(`select pg_drop_replication_slot($1)`, [slot]);
+          dropped = true;
+        } catch (err) {
+          const message = (err as Error).message;
+          // already gone is exactly the state we want
+          if (/does not exist/i.test(message)) dropped = true;
+          else lastError = message;
+        }
+      }
+      if (!dropped) {
+        this.logger.error(
+          `Could not drop replication slot "${slot}" — it will keep pinning WAL on the source until dropped manually: ${lastError}`,
+        );
+      }
       await a.query(`DROP PUBLICATION IF EXISTS ${this.quoteIdent(pub)}`).catch(() => undefined);
     });
   }
@@ -174,54 +197,104 @@ export class PostgresCdcProvider implements CdcProvider {
     const ops = new Set<CdcOperation>(hook.trigger.operations);
     const schema = src.schema || 'public';
 
-    const service = new LogicalReplicationService(this.clientConfig(conn, src.database), {
-      acknowledge: { auto: true, timeoutSeconds: 10 },
-      flowControl: { enabled: true }, // backpressure, await each delivery
-    });
-
-    service.on(
-      'data',
-      async (
-        lsn: string,
-        msg: {
-          tag: string;
-          relation?: { name: string; schema: string };
-          new?: Record<string, unknown>;
-          old?: Record<string, unknown>;
-          key?: Record<string, unknown>;
-        },
-      ) => {
-        if (msg.tag !== 'insert' && msg.tag !== 'update' && msg.tag !== 'delete') return;
-        if (!ops.has(msg.tag as CdcOperation)) return;
-        if (!msg.relation || msg.relation.name !== src.table || msg.relation.schema !== schema) {
-          return;
-        }
-        const row = msg.tag === 'delete' ? (msg.old ?? msg.key ?? {}) : (msg.new ?? {});
-        const change: CdcChange = { op: msg.tag as CdcOperation, row, cursor: lsn };
-        await handlers.onChange(change);
-      },
-    );
-
-    service.on('error', (err: Error) => handlers.onError(err));
-
     const plugin = new PgoutputPlugin({
       protoVersion: 1,
       publicationNames: [this.pubName(hookId)],
     });
-    // resumes from the slot's confirmed LSN automatically
-    service.subscribe(plugin, this.slotName(hookId)).catch((err: Error) => {
-      handlers.onError(new Error(`subscribe failed: ${err.message}`));
-    });
+
+    let stopped = false;
+    let current: LogicalReplicationService | null = null;
+    let attempt = 0;
+    // surface each distinct failure ONCE (a slot already in use, bad auth, …)
+    // instead of spamming onError on every backoff retry
+    let lastReported: string | null = null;
+    const report = (err: Error): void => {
+      if (stopped || err.message === lastReported) return;
+      lastReported = err.message;
+      handlers.onError(err);
+    };
+
+    const makeService = (): LogicalReplicationService => {
+      const service = new LogicalReplicationService(this.clientConfig(conn, src.database), {
+        acknowledge: { auto: true, timeoutSeconds: 10 },
+        flowControl: { enabled: true }, // backpressure, await each delivery
+      });
+
+      service.on(
+        'data',
+        async (
+          lsn: string,
+          msg: {
+            tag: string;
+            relation?: { name: string; schema: string };
+            new?: Record<string, unknown>;
+            old?: Record<string, unknown>;
+            key?: Record<string, unknown>;
+          },
+        ) => {
+          // data is flowing, so the subscription is healthy: reset the backoff
+          attempt = 0;
+          lastReported = null;
+          if (msg.tag !== 'insert' && msg.tag !== 'update' && msg.tag !== 'delete') return;
+          if (!ops.has(msg.tag as CdcOperation)) return;
+          if (!msg.relation || msg.relation.name !== src.table || msg.relation.schema !== schema) {
+            return;
+          }
+          const row = msg.tag === 'delete' ? (msg.old ?? msg.key ?? {}) : (msg.new ?? {});
+          const change: CdcChange = { op: msg.tag as CdcOperation, row, cursor: lsn };
+          await handlers.onChange(change);
+        },
+      );
+
+      service.on('error', (err: Error) => report(err));
+      return service;
+    };
+
+    // `subscribe` rejects on connection loss and the library does NOT reconnect
+    // on its own — without this loop a dropped stream would show "Live" forever.
+    // the slot persists the confirmed LSN, so each reconnect resumes exactly.
+    const loop = async (): Promise<void> => {
+      while (!stopped) {
+        const service = makeService();
+        current = service;
+        try {
+          await service.subscribe(plugin, this.slotName(hookId));
+          if (stopped) break;
+          // stream ended without an error (server closed it): reconnect
+          await delay(backoffMs(attempt++));
+        } catch (err) {
+          if (stopped) break;
+          report(new Error(`replication stream error: ${(err as Error).message}`));
+          await delay(backoffMs(attempt++));
+        } finally {
+          await service.stop().catch(() => undefined);
+        }
+      }
+    };
+    // drive the loop in the background, it owns its own lifecycle
+    void loop().catch((err) => handlers.onError(err as Error));
 
     return {
       stop: async () => {
-        await service.stop().catch(() => undefined);
+        stopped = true;
+        await current?.stop().catch(() => undefined);
       },
     };
   }
 
   private clientConfig(conn: ConnectionConfig, database?: string) {
     if (conn.connectionString) {
+      // logical replication is per-database: the stream must open against the
+      // hook's source database, not whatever database the saved string names
+      if (database) {
+        try {
+          const u = new URL(conn.connectionString);
+          u.pathname = `/${database}`;
+          return { connectionString: u.toString() } as Record<string, unknown>;
+        } catch {
+          /* unparseable string, fall back to using it verbatim */
+        }
+      }
       return { connectionString: conn.connectionString } as Record<string, unknown>;
     }
     return {

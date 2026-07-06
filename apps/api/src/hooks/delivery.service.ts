@@ -12,6 +12,8 @@ import type { DeliveryOutcome } from './hooks.types';
 
 const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const RESPONSE_LIMIT = 16_384;
+/** stop reading a response body past this point, the rest is never kept anyway */
+const BODY_READ_LIMIT = 65_536;
 
 @Injectable()
 export class DeliveryService {
@@ -82,7 +84,7 @@ export class DeliveryService {
           signal,
         });
         lastStatus = res.status;
-        lastResponse = (await res.text().catch(() => '')).slice(0, RESPONSE_LIMIT);
+        lastResponse = (await readBodyCapped(res)).slice(0, RESPONSE_LIMIT);
 
         if (res.ok) {
           return {
@@ -98,7 +100,7 @@ export class DeliveryService {
 
         lastError = `HTTP ${res.status} ${res.statusText}`.trim();
         if (RETRYABLE_STATUS.has(res.status) && attempt < delivery.maxAttempts) {
-          await this.backoff(attempt, delivery, res.headers.get('retry-after'));
+          await this.backoff(attempt, delivery, res.headers.get('retry-after'), runSignal);
           continue;
         }
         break; // non-retryable HTTP error
@@ -108,7 +110,7 @@ export class DeliveryService {
         lastError = describeFetchError(err);
         lastStatus = null;
         if (attempt < delivery.maxAttempts) {
-          await this.backoff(attempt, delivery, null);
+          await this.backoff(attempt, delivery, null, runSignal);
           continue;
         }
       }
@@ -125,11 +127,15 @@ export class DeliveryService {
     };
   }
 
-  /** exponential backoff with jitter, honoring a numeric `Retry-After` */
+  /**
+   * exponential backoff with jitter, honoring a numeric `Retry-After`. aborts
+   * early on the run's signal so a cancel never waits out `backoffMaxMs`.
+   */
   private async backoff(
     attempt: number,
     delivery: HookDeliveryConfig,
     retryAfter: string | null,
+    signal: AbortSignal,
   ): Promise<void> {
     let delay = Math.min(
       delivery.backoffMaxMs,
@@ -140,8 +146,33 @@ export class DeliveryService {
       delay = Math.max(delay, Math.min(retryAfterMs, delivery.backoffMaxMs));
     }
     const jitter = delay * 0.2 * Math.random();
-    await sleep(delay + jitter);
+    await sleep(delay + jitter, signal);
   }
+}
+
+/**
+ * read at most {@link BODY_READ_LIMIT} of a response body, then cancel the
+ * rest, so a huge (or endless streaming) response can't balloon memory the way
+ * an unbounded `res.text()` would.
+ */
+async function readBodyCapped(res: Response, limit = BODY_READ_LIMIT): Promise<string> {
+  const body = res.body;
+  if (!body) return '';
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let out = '';
+  try {
+    while (out.length < limit) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      out += decoder.decode(value, { stream: true });
+    }
+  } catch {
+    /* a partial body is fine, it's only kept as a log snippet */
+  } finally {
+    reader.cancel().catch(() => undefined);
+  }
+  return out.slice(0, limit);
 }
 
 /**
