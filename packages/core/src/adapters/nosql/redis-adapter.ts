@@ -75,6 +75,11 @@ export class RedisAdapter implements DatabaseAdapter {
           maxRetriesPerRequest: 2,
           connectTimeout: 8000,
         });
+    // ioredis emits 'error' for socket-level failures (e.g. the server going
+    // away between commands); with no listener Node treats it as an unhandled
+    // 'error' event and crashes the process. individual commands still reject
+    // with their own errors, so swallowing here loses nothing
+    this.client.on('error', () => {});
     return this.client;
   }
 
@@ -151,10 +156,18 @@ export class RedisAdapter implements DatabaseAdapter {
     };
   }
 
+  /**
+   * read one key as a { key, type, ttl, value } row. browse previews truncate
+   * lists/zsets to 25 elements to keep the grid light; `full` reads everything
+   * (backups MUST use it — restore deletes the key before rewriting it, so a
+   * truncated read would silently lose data)
+   */
   private async readKey(
     client: Redis,
     key: string,
+    full = false,
   ): Promise<Record<string, unknown>> {
+    const stop = full ? -1 : 24;
     const type = await client.type(key);
     const ttl = await client.ttl(key);
     let value: unknown;
@@ -163,13 +176,13 @@ export class RedisAdapter implements DatabaseAdapter {
         value = await client.get(key);
         break;
       case 'list':
-        value = await client.lrange(key, 0, 24);
+        value = await client.lrange(key, 0, stop);
         break;
       case 'set':
         value = await client.smembers(key);
         break;
       case 'zset':
-        value = await client.zrange(key, 0, 24, 'WITHSCORES');
+        value = await client.zrange(key, 0, stop, 'WITHSCORES');
         break;
       case 'hash':
         value = await client.hgetall(key);
@@ -331,7 +344,16 @@ export class RedisAdapter implements DatabaseAdapter {
       cursor = next;
     } while (cursor !== '0');
 
-    const rows = await Promise.all(keys.map((k) => this.readKey(client, k)));
+    // full (untruncated) reads, in bounded chunks so a large keyspace doesn't
+    // fan out into one giant Promise.all
+    const rows: Array<Record<string, unknown>> = [];
+    const chunkSize = 50;
+    for (let i = 0; i < keys.length; i += chunkSize) {
+      const chunk = keys.slice(i, i + chunkSize);
+      rows.push(
+        ...(await Promise.all(chunk.map((k) => this.readKey(client, k, true)))),
+      );
+    }
     const doc: BackupDocument = {
       dataBridge: 'backup',
       version: 1,

@@ -72,18 +72,28 @@ export function rowKey(row: Row, pk: string[]): string {
   return JSON.stringify(cols.map((c) => row[c] ?? null));
 }
 
+/** normalize a timestamp-ish value (Date | ISO string | epoch number) */
+function tsNorm(v: unknown): number | string {
+  if (v instanceof Date) return v.getTime();
+  if (typeof v === 'number') return v;
+  if (typeof v === 'string') {
+    const t = Date.parse(v);
+    return Number.isNaN(t) ? v : t;
+  }
+  return String(v);
+}
+
 /** compare two timestamp-ish values (Date | ISO string | epoch number) */
 function tsEquals(a: unknown, b: unknown): boolean {
-  const norm = (v: unknown): number | string => {
-    if (v instanceof Date) return v.getTime();
-    if (typeof v === 'number') return v;
-    if (typeof v === 'string') {
-      const t = Date.parse(v);
-      return Number.isNaN(t) ? v : t;
-    }
-    return String(v);
-  };
-  return norm(a) === norm(b);
+  return tsNorm(a) === tsNorm(b);
+}
+
+/** true when `a` sorts after `b` (mixed types fall back to string order) */
+function tsGreater(a: unknown, b: unknown): boolean {
+  const na = tsNorm(a);
+  const nb = tsNorm(b);
+  if (typeof na === 'number' && typeof nb === 'number') return na > nb;
+  return String(na) > String(nb);
 }
 
 /** a serializable form of a timestamp value for persisting in the cursor */
@@ -107,10 +117,18 @@ export function emptyCursor(strategy: WatchStrategy): WatchCursor {
   }
 }
 
-/** the browse filters + sort for the next poll, given the current cursor */
+/**
+ * the browse filters + sort for the next poll, given the current cursor.
+ * `pk` (when known) makes paging deterministic: the timestamp strategy uses it
+ * as a secondary sort so rows sharing a timestamp always come back in the same
+ * order, and the snapshot strategy orders its scan by it so the scanned page
+ * is stable across polls (an unordered LIMIT scan can return a different
+ * subset each time and silently miss rows).
+ */
 export function watchQuery(
   strategy: WatchStrategy,
   cursor: WatchCursor,
+  pk: string[] = [],
 ): { filters: FilterSpec[]; sort: SortSpec[] } {
   if (strategy.strategy === 'increment' && cursor.strategy === 'increment') {
     return {
@@ -122,16 +140,22 @@ export function watchQuery(
     };
   }
   if (strategy.strategy === 'timestamp' && cursor.strategy === 'timestamp') {
+    const tiebreakers: SortSpec[] = pk
+      .filter((c) => c !== strategy.column)
+      .map((c) => ({ column: c, direction: 'asc' }));
     return {
       filters:
         cursor.ts != null
           ? [{ column: strategy.column, operator: 'gte', value: cursor.ts }]
           : [],
-      sort: [{ column: strategy.column, direction: 'asc' }],
+      sort: [{ column: strategy.column, direction: 'asc' }, ...tiebreakers],
     };
   }
   // snapshot: scan the table (caller bounds the page size)
-  return { filters: [], sort: [] };
+  return {
+    filters: [],
+    sort: pk.map((c) => ({ column: c, direction: 'asc' })),
+  };
 }
 
 /**
@@ -145,14 +169,20 @@ export function advanceCursor(
   pk: string[],
 ): AdvanceResult {
   if (strategy.strategy === 'increment' && cursor.strategy === 'increment') {
-    // every row is strictly greater than the cursor by query construction
-    const last = rows[rows.length - 1];
+    // every row is strictly greater than the cursor by query construction.
+    // skip NULLs when advancing — a null cursor value would make the next
+    // poll a fresh watch and re-deliver the whole table
+    let value = cursor.value;
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const v = rows[i]![strategy.column];
+      if (v != null) {
+        value = v;
+        break;
+      }
+    }
     return {
       newRows: rows,
-      cursor: {
-        strategy: 'increment',
-        value: last ? last[strategy.column] : cursor.value,
-      },
+      cursor: { strategy: 'increment', value },
     };
   }
 
@@ -162,19 +192,35 @@ export function advanceCursor(
     if (rows.length === 0) {
       return { newRows, cursor };
     }
-    // rows are sorted ascending, so the last one carries the max timestamp
-    const maxTs = rows[rows.length - 1]![strategy.column];
+    // max NON-NULL timestamp of the page. NULLs must never advance (or reset)
+    // the cursor — a null ts looks like a fresh watch on the next poll and
+    // would re-deliver the whole table forever
+    let maxTs: unknown = null;
+    for (const r of rows) {
+      const v = r[strategy.column];
+      if (v == null) continue;
+      if (maxTs == null || tsGreater(v, maxTs)) maxTs = v;
+    }
+    if (maxTs == null) {
+      return { newRows, cursor };
+    }
     // remember all rows at the boundary timestamp so the next `>=` poll can
     // dedupe them
     const boundaryKeys = rows
       .filter((r) => tsEquals(r[strategy.column], maxTs))
       .map((r) => rowKey(r, pk));
+    // when the boundary timestamp didn't move, this poll only saw a subset of
+    // the rows at that instant — union with the keys already remembered so
+    // rows emitted by earlier polls at the same ts aren't re-delivered
+    const stalled = cursor.ts != null && tsEquals(maxTs, cursor.ts);
     return {
       newRows,
       cursor: {
         strategy: 'timestamp',
         ts: serializeTs(maxTs),
-        boundaryKeys,
+        boundaryKeys: stalled
+          ? [...new Set([...cursor.boundaryKeys, ...boundaryKeys])]
+          : boundaryKeys,
       },
     };
   }
