@@ -306,6 +306,16 @@ export class RedisAdapter implements DatabaseAdapter {
     return this.insertRow({ table: p.table, schema: p.schema, values: p.values });
   }
 
+  /**
+   * Redis has no multi-key ACID transaction we model here: each row is written
+   * with an idempotent SET/DEL by key, which is what keeps a retry safe. so
+   * `withTransaction` is a pass-through that just runs `fn` — no batch
+   * atomicity is implied (capabilities.transactions is false).
+   */
+  async withTransaction<T>(fn: () => Promise<T>): Promise<T> {
+    return fn();
+  }
+
   /* ----- schema management: doesn't apply to a key-value store ----- */
 
   private ddlUnsupported(): never {
@@ -329,6 +339,14 @@ export class RedisAdapter implements DatabaseAdapter {
 
   /* ----- backup & restore (every key in the current DB) ----- */
 
+  /**
+   * dump every key in the current logical DB to a portable JSON document.
+   * value reads are already bounded: keys are enumerated via SCAN and their
+   * values fetched in fixed chunks (see `chunkSize` below) rather than one
+   * unbounded `Promise.all` over the whole keyspace, so the in-flight working
+   * set stays small. (the flat list of key NAMES is still collected up front;
+   * that's cheap relative to the values and unchanged here.)
+   */
   async backup(opts: BackupOptions): Promise<string> {
     if (opts.format !== 'json') {
       throw new UnsupportedError('Redis supports JSON backups only.');

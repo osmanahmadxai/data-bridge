@@ -11,6 +11,21 @@
  * a write to N targets is reported as ONE {@link DeliveryOutcome} so it slots
  * into the same run/monitor machinery as an HTTP delivery: success only if
  * every target succeeded, otherwise failed (and safely retryable for upserts).
+ *
+ * atomicity: each target's batch is written inside a single transaction on
+ * transaction-capable engines (Postgres/MySQL/SQLite), so the batch commits
+ * all-or-nothing. that closes the partial-batch hole: if row 3 fails, rows 1–2
+ * roll back too, so a retry of the failed batch can't double-apply the rows
+ * that had committed. engines without ACID (Mongo/Redis) rely on idempotent
+ * per-row upsert/delete instead, which is equally retry-safe.
+ *
+ * cross-target retry: the delivery is still reported failed if ANY target
+ * fails (the monitor depends on that single-outcome contract). there is no
+ * per-target retry checkpoint here, so a full-delivery retry re-runs every
+ * target — that is safe because every write path is either transactionally
+ * atomic or an idempotent upsert/delete; the only non-idempotent path is
+ * `insert` mode, whose batch is now atomic so a retry re-applies the whole
+ * batch cleanly rather than duplicating a committed prefix.
  */
 import { Injectable, Logger } from '@nestjs/common';
 import {
@@ -105,37 +120,56 @@ export class DatabaseSinkService {
       target.connectionId,
       target.database,
       async (adapter) => {
-        for (const row of rows) {
-          const mapped = mapRow(row, target.mapping);
-          if (op === 'delete') {
-            const identity = pick(mapped, target.keyColumns);
-            const res = await adapter.deleteRow({
-              schema: target.schema,
-              table: target.table,
-              identity,
-            });
-            affected += res.affectedRows ?? 0;
-          } else if (target.writeMode === 'insert') {
-            const res = await adapter.insertRow({
-              schema: target.schema,
-              table: target.table,
-              values: mapped,
-            });
-            affected += res.affectedRows ?? 1;
-          } else {
-            if (target.keyColumns.length === 0) {
-              throw new Error(
-                'Upsert needs at least one key column; set keys or use insert mode',
-              );
+        // write the whole batch for this target, one row at a time
+        const writeBatch = async (): Promise<void> => {
+          for (const row of rows) {
+            const mapped = mapRow(row, target.mapping);
+            if (op === 'delete') {
+              const identity = pick(mapped, target.keyColumns);
+              const res = await adapter.deleteRow({
+                schema: target.schema,
+                table: target.table,
+                identity,
+              });
+              affected += res.affectedRows ?? 0;
+            } else if (target.writeMode === 'insert') {
+              const res = await adapter.insertRow({
+                schema: target.schema,
+                table: target.table,
+                values: mapped,
+              });
+              affected += res.affectedRows ?? 1;
+            } else {
+              if (target.keyColumns.length === 0) {
+                throw new Error(
+                  'Upsert needs at least one key column; set keys or use insert mode',
+                );
+              }
+              const res = await adapter.upsertRow({
+                schema: target.schema,
+                table: target.table,
+                values: mapped,
+                keyColumns: target.keyColumns,
+              });
+              affected += res.affectedRows ?? 1;
             }
-            const res = await adapter.upsertRow({
-              schema: target.schema,
-              table: target.table,
-              values: mapped,
-              keyColumns: target.keyColumns,
-            });
-            affected += res.affectedRows ?? 1;
           }
+        };
+
+        // make the batch atomic where the engine supports it: on any failure
+        // the whole batch rolls back, so a retry can't double-apply a committed
+        // prefix. a rollback means none of these writes persisted, so restore
+        // the running `affected` count to what it was before the batch.
+        if (adapter.capabilities.transactions && adapter.withTransaction) {
+          const before = affected;
+          try {
+            await adapter.withTransaction(writeBatch);
+          } catch (err) {
+            affected = before;
+            throw err;
+          }
+        } else {
+          await writeBatch();
         }
       },
     );

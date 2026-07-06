@@ -49,6 +49,8 @@ export const MONGODB_CAPABILITIES: AdapterCapabilities = {
 
 const SAMPLE_SIZE = 50;
 const DEFAULT_LIMIT = 100;
+/** documents fetched per cursor round-trip when streaming a backup */
+const BACKUP_FETCH_BATCH = 1000;
 
 export class MongodbAdapter implements DatabaseAdapter {
   readonly engine = 'mongodb' as const;
@@ -327,8 +329,27 @@ export class MongodbAdapter implements DatabaseAdapter {
     await client.db(name).dropDatabase();
   }
 
+  /**
+   * no multi-document ACID transaction is applied here: each row is written via
+   * an idempotent upsert/delete, which is what makes a retry safe on MongoDB.
+   * so `withTransaction` is a pass-through that just runs `fn` — it does NOT
+   * promise atomicity across the batch (capabilities.transactions is false).
+   */
+  async withTransaction<T>(fn: () => Promise<T>): Promise<T> {
+    return fn();
+  }
+
   /* ----- backup & restore ----- */
 
+  /**
+   * dump collections to a portable JSON document. memory is bounded to
+   * {@link BACKUP_FETCH_BATCH} documents per round-trip: each collection is
+   * streamed by iterating its cursor in batches instead of `find({}).toArray()`
+   * pulling the whole collection into RAM at once (which OOMs on large
+   * collections and takes down live bridges). the assembled document still
+   * holds every encoded row before stringify, but each fetched batch is freed
+   * after it is normalized, so the working set is the batch, not the collection.
+   */
   async backup(opts: BackupOptions): Promise<string> {
     if (opts.format !== 'json') {
       throw new UnsupportedError('MongoDB supports JSON backups only.');
@@ -349,12 +370,25 @@ export class MongodbAdapter implements DatabaseAdapter {
       tables: [],
     };
     for (const name of names) {
-      const docs = await db.collection(name).find({}).toArray();
-      const rows = docs.map(normalizeDoc);
+      const rows: Array<Record<string, unknown>> = [];
+      const columns = new Map<string, string>();
+      const cursor = db
+        .collection(name)
+        .find({})
+        .batchSize(BACKUP_FETCH_BATCH);
+      // stream the cursor one document at a time; the driver fetches in
+      // batchSize chunks under the hood, so only one batch is buffered
+      for await (const raw of cursor) {
+        const asRow = raw as Record<string, unknown>;
+        for (const [k, v] of Object.entries(asRow)) {
+          if (!columns.has(k)) columns.set(k, jsType(v));
+        }
+        rows.push(normalizeDoc(asRow));
+      }
       doc.tables.push({
         name,
         primaryKey: ['_id'],
-        columns: inferColumns(docs).map((c) => c.name),
+        columns: [...columns.keys()],
         rows,
       });
     }

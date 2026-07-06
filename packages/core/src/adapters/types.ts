@@ -369,4 +369,20 @@ export interface DatabaseAdapter {
   /* backup & restore, guarded by `capabilities.backupFormats` */
   backup(options: BackupOptions): Promise<string>;
   restore(content: string, format: BackupFormat): Promise<RestoreResult>;
+
+  /**
+   * run `fn` inside a single-connection transaction: every adapter mutation
+   * issued from within `fn` runs on one dedicated connection, and the whole set
+   * commits atomically (or rolls back if `fn` throws). used by the database
+   * sink so a batch of rows to one target is all-or-nothing, keeping a retry of
+   * a failed batch from double-applying rows that already committed.
+   *
+   * optional and capability-gated: engines with `capabilities.transactions`
+   * (Postgres/MySQL/SQLite) provide real BEGIN/COMMIT/ROLLBACK. engines without
+   * multi-statement ACID (Mongo/Redis) run `fn` as a plain pass-through — no
+   * atomicity is implied; their retry-safety comes from idempotent upsert/delete
+   * per row instead. callers MUST treat this as optional (`adapter.withTransaction?.(...)`)
+   * and fall back to running the work directly when it is absent.
+   */
+  withTransaction?<T>(fn: () => Promise<T>): Promise<T>;
 }
