@@ -13,6 +13,7 @@ import type {
   DatabaseAdapter,
   DatabaseEngine,
 } from './types';
+import { UnsupportedError } from '../errors';
 
 /** a single connection-form field descriptor (drives the dynamic UI form) */
 export interface DriverField {
@@ -60,7 +61,11 @@ export function listDrivers(): DriverDefinition[] {
 export function createAdapter(config: ConnectionConfig): DatabaseAdapter {
   const def = registry.get(config.engine);
   if (!def) {
-    throw new Error(`No driver registered for engine "${config.engine}"`);
+    // typed so routes answer 501 instead of a generic 500 (e.g. `mssql` is a
+    // declared engine without an adapter implementation yet)
+    throw new UnsupportedError(
+      `No driver is registered for engine "${config.engine}"`,
+    );
   }
   return def.create(config);
 }

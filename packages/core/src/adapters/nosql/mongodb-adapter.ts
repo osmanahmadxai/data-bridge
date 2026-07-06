@@ -269,11 +269,33 @@ export class MongodbAdapter implements DatabaseAdapter {
       throw new QueryError('Cannot upsert without key columns to match on');
     }
     const db = await this.getDb(p.schema);
-    const filter: Record<string, unknown> = {};
-    for (const k of p.keyColumns) filter[k] = p.values[k];
+    const rawFilter: Record<string, unknown> = {};
+    for (const k of p.keyColumns) rawFilter[k] = p.values[k];
+    const filter = coerceId(rawFilter);
+    // key columns live only in the (coerced) filter: `_id` is immutable and
+    // mongo rejects any $set that touches it (even with the same value), and
+    // on insert the equality-filter fields are copied into the new document
+    // anyway, so they never belong in the update payload
+    const updates: Record<string, unknown> = {};
+    const onInsert: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(p.values)) {
+      if (k in rawFilter) continue;
+      if (k === '_id') {
+        // `_id` supplied but not a key column: only settable at insert time
+        onInsert._id = coerceId({ _id: v })._id;
+        continue;
+      }
+      updates[k] = v;
+    }
+    const update: Record<string, unknown> = {};
+    if (Object.keys(updates).length > 0) update.$set = updates;
+    if (Object.keys(onInsert).length > 0) update.$setOnInsert = onInsert;
+    // an empty update document is invalid; a no-op $setOnInsert keeps the
+    // upsert idempotent when every value is a key column
+    if (Object.keys(update).length === 0) update.$setOnInsert = { ...filter };
     const res = await db
       .collection(p.table)
-      .updateOne(coerceId(filter), { $set: p.values }, { upsert: true });
+      .updateOne(filter, update, { upsert: true });
     return writeResult(res.modifiedCount + (res.upsertedCount ?? 0), 'upsertOne');
   }
 
@@ -415,6 +437,26 @@ function jsType(v: unknown): string {
   return typeof v;
 }
 
+/** escape regex metacharacters so user input matches literally */
+function escapeRegex(value: unknown): string {
+  return String(value ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * comparison operands must be scalars: passing an object through verbatim
+ * would let a crafted value like `{"$gt": ""}` inject mongo operators into
+ * the filter. Dates are fine (they're BSON scalars).
+ */
+function scalarValue(f: FilterSpec): unknown {
+  const v = f.value;
+  if (v !== null && typeof v === 'object' && !(v instanceof Date)) {
+    throw new BadRequestError(
+      `Filter value for "${f.column}" must be a scalar`,
+    );
+  }
+  return v;
+}
+
 function buildMongoFilter(
   filters: FilterSpec[] | undefined,
 ): Record<string, unknown> {
@@ -423,31 +465,31 @@ function buildMongoFilter(
   for (const f of filters) {
     switch (f.operator) {
       case 'eq':
-        query[f.column] = f.value;
+        query[f.column] = scalarValue(f);
         break;
       case 'neq':
-        query[f.column] = { $ne: f.value };
+        query[f.column] = { $ne: scalarValue(f) };
         break;
       case 'lt':
-        query[f.column] = { $lt: f.value };
+        query[f.column] = { $lt: scalarValue(f) };
         break;
       case 'lte':
-        query[f.column] = { $lte: f.value };
+        query[f.column] = { $lte: scalarValue(f) };
         break;
       case 'gt':
-        query[f.column] = { $gt: f.value };
+        query[f.column] = { $gt: scalarValue(f) };
         break;
       case 'gte':
-        query[f.column] = { $gte: f.value };
+        query[f.column] = { $gte: scalarValue(f) };
         break;
       case 'contains':
-        query[f.column] = { $regex: String(f.value ?? ''), $options: 'i' };
+        query[f.column] = { $regex: escapeRegex(f.value), $options: 'i' };
         break;
       case 'startsWith':
-        query[f.column] = { $regex: `^${String(f.value ?? '')}`, $options: 'i' };
+        query[f.column] = { $regex: `^${escapeRegex(f.value)}`, $options: 'i' };
         break;
       case 'endsWith':
-        query[f.column] = { $regex: `${String(f.value ?? '')}$`, $options: 'i' };
+        query[f.column] = { $regex: `${escapeRegex(f.value)}$`, $options: 'i' };
         break;
       case 'isNull':
         query[f.column] = null;
@@ -455,6 +497,13 @@ function buildMongoFilter(
       case 'notNull':
         query[f.column] = { $ne: null };
         break;
+      case 'in':
+        query[f.column] = { $in: Array.isArray(f.value) ? f.value : [] };
+        break;
+      default:
+        throw new BadRequestError(
+          `Unsupported filter operator: ${String(f.operator)}`,
+        );
     }
   }
   return query;

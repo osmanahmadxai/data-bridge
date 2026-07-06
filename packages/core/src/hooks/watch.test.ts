@@ -41,6 +41,17 @@ describe('increment strategy', () => {
     expect(r.newRows).toEqual([]);
     expect(r.cursor).toMatchObject({ value: 9 });
   });
+
+  it('never overwrites the cursor with a NULL tracked value', () => {
+    const cursor = { strategy: 'increment' as const, value: 9 };
+    const r = advanceCursor(INC, cursor, [{ id: 10 }, { id: null }], ['id']);
+    expect(r.newRows).toHaveLength(2);
+    // advanced to the max NON-NULL value, not poisoned back to null
+    expect(r.cursor).toMatchObject({ value: 10 });
+
+    const allNull = advanceCursor(INC, r.cursor, [{ id: null }], ['id']);
+    expect(allNull.cursor).toMatchObject({ value: 10 });
+  });
 });
 
 describe('timestamp strategy', () => {
@@ -78,6 +89,80 @@ describe('timestamp strategy', () => {
     expect(p2.newRows.map((r) => r.id)).toEqual([4]);
   });
 
+  it('unions boundary keys when the timestamp does not advance', () => {
+    const t1 = '2026-01-01T00:00:00Z';
+    // poll 1 saw ids 1 and 2 at t1
+    let cursor = advanceCursor(
+      TS,
+      emptyCursor(TS),
+      [
+        { id: 1, updated_at: t1 },
+        { id: 2, updated_at: t1 },
+      ],
+      ['id'],
+    ).cursor;
+
+    // poll 2 sees only a NEW id 3 at the same t1 (e.g. paging split the set).
+    // the earlier boundary keys must survive, not be replaced
+    const p2 = advanceCursor(TS, cursor, [{ id: 3, updated_at: t1 }], ['id']);
+    expect(p2.newRows.map((r) => r.id)).toEqual([3]);
+    cursor = p2.cursor;
+
+    // poll 3 re-fetches all three at t1 — nothing may be re-delivered
+    const p3 = advanceCursor(
+      TS,
+      cursor,
+      [
+        { id: 1, updated_at: t1 },
+        { id: 2, updated_at: t1 },
+        { id: 3, updated_at: t1 },
+      ],
+      ['id'],
+    );
+    expect(p3.newRows).toEqual([]);
+  });
+
+  it('NULL tracked values never advance or reset the cursor', () => {
+    const t1 = '2026-01-01T00:00:00Z';
+    let cursor = advanceCursor(
+      TS,
+      emptyCursor(TS),
+      [{ id: 1, updated_at: t1 }],
+      ['id'],
+    ).cursor;
+
+    // a page whose max tracked value is NULL leaves the cursor untouched
+    // (a null ts would look like a fresh watch and re-deliver the table)
+    const r = advanceCursor(TS, cursor, [{ id: 2, updated_at: null }], ['id']);
+    expect(r.newRows.map((x) => x.id)).toEqual([2]);
+    expect(r.cursor).toMatchObject({ ts: t1 });
+    cursor = r.cursor;
+
+    // a mixed page advances to the max NON-NULL timestamp
+    const t2 = '2026-01-01T00:00:05Z';
+    const mixed = advanceCursor(
+      TS,
+      cursor,
+      [
+        { id: 3, updated_at: null },
+        { id: 4, updated_at: t2 },
+      ],
+      ['id'],
+    );
+    expect(mixed.cursor).toMatchObject({ ts: t2 });
+  });
+
+  it('adds primary-key tiebreakers to the sort when pk is provided', () => {
+    expect(watchQuery(TS, emptyCursor(TS), ['id']).sort).toEqual([
+      { column: 'updated_at', direction: 'asc' },
+      { column: 'id', direction: 'asc' },
+    ]);
+    // the tracked column itself is never duplicated as a tiebreaker
+    expect(watchQuery(TS, emptyCursor(TS), ['updated_at']).sort).toEqual([
+      { column: 'updated_at', direction: 'asc' },
+    ]);
+  });
+
   it('accepts Date values and serializes the cursor as an ISO string', () => {
     const cursor = emptyCursor(TS);
     const r = advanceCursor(
@@ -91,6 +176,13 @@ describe('timestamp strategy', () => {
 });
 
 describe('snapshot strategy', () => {
+  it('orders the scan by primary key when provided (deterministic page)', () => {
+    expect(watchQuery(SNAP, emptyCursor(SNAP)).sort).toEqual([]);
+    expect(watchQuery(SNAP, emptyCursor(SNAP), ['id']).sort).toEqual([
+      { column: 'id', direction: 'asc' },
+    ]);
+  });
+
   it('emits only previously-unseen primary keys', () => {
     let cursor = emptyCursor(SNAP);
     const p1 = advanceCursor(SNAP, cursor, [{ id: 'a' }, { id: 'b' }], ['id']);

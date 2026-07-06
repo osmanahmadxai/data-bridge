@@ -88,18 +88,25 @@ function stringify(value: unknown): string {
   return String(value);
 }
 
-/** recursively substitute tokens in a parsed JSON node */
+/** keys that would reparent or pollute the output object if assigned */
+const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/**
+ * recursively substitute tokens in a parsed JSON node. token lookups use
+ * `Object.hasOwn` (not `in`) so inherited names like `constructor` can't leak
+ * prototype internals into the payload.
+ */
 function substitute(node: unknown, scope: Row, warnings: Set<string>): unknown {
   if (typeof node === 'string') {
     const whole = node.match(WHOLE_TOKEN);
     if (whole) {
       const name = whole[1]!;
-      if (name in scope) return scope[name];
+      if (Object.hasOwn(scope, name)) return scope[name];
       warnings.add(name);
       return null;
     }
     return node.replace(ANY_TOKEN, (_m, name: string) => {
-      if (name in scope) return stringify(scope[name]);
+      if (Object.hasOwn(scope, name)) return stringify(scope[name]);
       warnings.add(name);
       return '';
     });
@@ -112,10 +119,13 @@ function substitute(node: unknown, scope: Row, warnings: Set<string>): unknown {
     for (const [key, value] of Object.entries(node)) {
       // keys are interpolated (string-only), values are fully substituted
       const renderedKey = key.replace(ANY_TOKEN, (_m, name: string) => {
-        if (name in scope) return stringify(scope[name]);
+        if (Object.hasOwn(scope, name)) return stringify(scope[name]);
         warnings.add(name);
         return '';
       });
+      // a rendered "__proto__" would reparent `out` instead of adding a
+      // property — drop such keys entirely
+      if (FORBIDDEN_KEYS.has(renderedKey)) continue;
       out[renderedKey] = substitute(value, scope, warnings);
     }
     return out;

@@ -43,6 +43,50 @@ export function assertSafeIdentifier(name: string): string {
   return name;
 }
 
+/** keyword/function DEFAULT expressions accepted verbatim (case-insensitive) */
+const DEFAULT_EXPR_ALLOWLIST = new Set([
+  'current_timestamp',
+  'current_date',
+  'current_time',
+  'now()',
+  'null',
+  'true',
+  'false',
+  'gen_random_uuid()',
+  'uuid()',
+]);
+
+/**
+ * a DEFAULT expression can't be a bound parameter, so validate it against a
+ * conservative grammar before it is interpolated into DDL: a numeric literal,
+ * a single-quoted string (with only `''` escapes), or an allowlisted
+ * keyword/function. everything else is rejected — this is the injection gate
+ * for create-table.
+ */
+export function assertSafeDefaultValue(value: string): string {
+  const v = value.trim();
+  if (/^-?\d+(\.\d+)?$/.test(v)) return v;
+  if (/^'(?:[^'\\]|'')*'$/.test(v)) return v;
+  if (DEFAULT_EXPR_ALLOWLIST.has(v.toLowerCase())) return v;
+  throw new BadRequestError(
+    `Invalid DEFAULT value ${JSON.stringify(value)}. ` +
+      `Use a number, a single-quoted string, or one of ` +
+      `CURRENT_TIMESTAMP, CURRENT_DATE, CURRENT_TIME, now(), NULL, TRUE, ` +
+      `FALSE, gen_random_uuid(), uuid().`,
+  );
+}
+
+/** coerce a limit/offset to a safe non-negative integer for interpolation */
+function assertPageBound(value: number, label: string): number {
+  const n = Math.trunc(Number(value));
+  if (!Number.isInteger(n) || n < 0) {
+    throw new BadRequestError(
+      `Invalid ${label}: expected a non-negative integer`,
+    );
+  }
+  return n;
+}
+
 const DEFAULT_MAX_ROWS = 5000;
 
 export abstract class BaseSqlAdapter implements DatabaseAdapter {
@@ -165,8 +209,13 @@ export abstract class BaseSqlAdapter implements DatabaseAdapter {
   }
 
   async browse(params: BrowseParams): Promise<BrowseResult> {
-    const limit = Math.min(Math.max(params.limit, 1), this.maxRows);
-    const offset = Math.max(params.offset, 0);
+    // limit/offset are interpolated (not bindable everywhere), so they must be
+    // proven integers — a NaN would otherwise flow straight into the SQL
+    const limit = Math.min(
+      Math.max(assertPageBound(params.limit, 'limit'), 1),
+      this.maxRows,
+    );
+    const offset = assertPageBound(params.offset, 'offset');
     const target = this.qualify(params.table, params.schema);
 
     const where = this.buildWhere(params.filters, 1);
@@ -394,7 +443,7 @@ export abstract class BaseSqlAdapter implements DatabaseAdapter {
     if (!col.nullable) sql += ' NOT NULL';
     if (col.unique && !col.primaryKey) sql += ' UNIQUE';
     if (col.defaultValue && col.defaultValue.trim()) {
-      sql += ` DEFAULT ${col.defaultValue.trim()}`;
+      sql += ` DEFAULT ${assertSafeDefaultValue(col.defaultValue)}`;
     }
     return sql;
   }
@@ -480,7 +529,7 @@ export abstract class BaseSqlAdapter implements DatabaseAdapter {
           schema: t.schema,
           primaryKey: t.primaryKey,
           columns: t.columns.map((c) => c.name),
-          rows: res.rows,
+          rows: res.rows.map(encodeRowForBackup),
         });
       }
       return JSON.stringify(doc, null, 2);
@@ -530,14 +579,27 @@ export abstract class BaseSqlAdapter implements DatabaseAdapter {
     return `CREATE TABLE IF NOT EXISTS ${this.qualify(t.name, t.schema)} (\n${defs.join(',\n')}\n);`;
   }
 
+  /** binary literal for SQL dumps: `X'..'` (MySQL/SQLite) or `'\x..'` (PG) */
+  protected hexLiteral(buf: Buffer): string {
+    const hex = buf.toString('hex');
+    return this.engine === 'postgres' ? `'\\x${hex}'` : `X'${hex}'`;
+  }
+
   private sqlLiteral(value: unknown): string {
     if (value === null || value === undefined) return 'NULL';
     if (typeof value === 'number') return String(value);
+    if (typeof value === 'bigint') return value.toString();
     if (typeof value === 'boolean') return this.booleanLiteral(value);
     if (value instanceof Date) return `'${value.toISOString()}'`;
+    if (Buffer.isBuffer(value)) return this.hexLiteral(value);
     const text =
       typeof value === 'object' ? JSON.stringify(value) : String(value);
-    return `'${text.replace(/'/g, "''")}'`;
+    let escaped = text.replace(/'/g, "''");
+    // MySQL treats backslash as an escape character inside string literals;
+    // leaving it unescaped corrupts the dump and lets a crafted value break
+    // out of the literal when the dump is restored
+    if (this.engine === 'mysql') escaped = escaped.replace(/\\/g, '\\\\');
+    return `'${escaped}'`;
   }
 
   async restore(content: string, format: BackupFormat): Promise<RestoreResult> {
@@ -591,6 +653,15 @@ export abstract class BaseSqlAdapter implements DatabaseAdapter {
     return 'TEXT';
   }
 
+  /**
+   * driver cap on bound placeholders per statement (Postgres/MySQL 65k-ish;
+   * SQLite overrides with its lower 32766). restore batches are sized so
+   * `rows × columns` stays under it even for very wide tables
+   */
+  protected maxBindParams(): number {
+    return 65_534;
+  }
+
   private async bulkInsert(
     table: string,
     schema: string | undefined,
@@ -600,10 +671,14 @@ export abstract class BaseSqlAdapter implements DatabaseAdapter {
     if (rows.length === 0 || columns.length === 0) return 0;
     const target = this.qualify(table, schema);
     const colSql = columns.map((c) => this.quoteIdent(c)).join(', ');
+    const batchSize = Math.max(
+      1,
+      Math.min(RESTORE_BATCH, Math.floor(this.maxBindParams() / columns.length)),
+    );
     let inserted = 0;
 
-    for (let i = 0; i < rows.length; i += RESTORE_BATCH) {
-      const batch = rows.slice(i, i + RESTORE_BATCH);
+    for (let i = 0; i < rows.length; i += batchSize) {
+      const batch = rows.slice(i, i + batchSize);
       const params: unknown[] = [];
       let ph = 1;
       const tuples = batch.map((row) => {
@@ -641,9 +716,41 @@ export abstract class BaseSqlAdapter implements DatabaseAdapter {
   }
 }
 
+/**
+ * encode driver values that don't survive JSON for a backup document. Buffers
+ * become the tagged `{ $bytes: base64 }` shape so a restore can rebuild the
+ * original bytes instead of stringifying Node's `{type:'Buffer',data:[...]}`
+ */
+function encodeRowForBackup(
+  row: Record<string, unknown>,
+): Record<string, unknown> {
+  let out: Record<string, unknown> | null = null;
+  for (const [k, v] of Object.entries(row)) {
+    if (Buffer.isBuffer(v)) {
+      out ??= { ...row };
+      out[k] = { $bytes: v.toString('base64') };
+    }
+  }
+  return out ?? row;
+}
+
+/** decode the tagged `{ $bytes }` shape (or legacy Buffer JSON) to a Buffer */
+function decodeBytes(value: Record<string, unknown>): Buffer | null {
+  if (typeof value.$bytes === 'string' && Object.keys(value).length === 1) {
+    return Buffer.from(value.$bytes, 'base64');
+  }
+  if (value.type === 'Buffer' && Array.isArray(value.data)) {
+    return Buffer.from(value.data as number[]);
+  }
+  return null;
+}
+
 /** coerce a JSON-decoded value into something a driver can bind for INSERT */
 function normalizeForInsert(value: unknown): unknown {
   if (value !== null && typeof value === 'object' && !(value instanceof Date)) {
+    if (Buffer.isBuffer(value)) return value;
+    const bytes = decodeBytes(value as Record<string, unknown>);
+    if (bytes) return bytes;
     return JSON.stringify(value);
   }
   return value;
