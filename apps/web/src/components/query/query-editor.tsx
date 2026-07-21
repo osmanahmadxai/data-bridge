@@ -6,7 +6,7 @@ import { useTheme } from 'next-themes';
 import { Loader2, Play, Plus, Sparkles, X } from 'lucide-react';
 import { format } from 'sql-formatter';
 import { toast } from 'sonner';
-import type { QueryLanguage, QueryResult } from '@data-bridge/core';
+import type { QueryLanguage, QueryResult } from '@syncle/core';
 import { api, ApiError } from '@/lib/api';
 import { useConnections, useDrivers, useSchema } from '@/lib/queries';
 import { useStudio } from '@/lib/store';

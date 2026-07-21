@@ -28,7 +28,7 @@ import {
   type ConnectionConfig,
   type DatabaseEngine,
   type HookRun,
-} from '@data-bridge/core';
+} from '@syncle/core';
 import { randomUUID } from 'node:crypto';
 import { AdapterPoolService } from '../connections/adapter-pool.service';
 import { ConnectionStoreService } from '../connections/connection-store.service';

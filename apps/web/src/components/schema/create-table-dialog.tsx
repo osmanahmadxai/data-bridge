@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { ColumnDefinition, DatabaseEngine } from '@data-bridge/core';
+import type { ColumnDefinition, DatabaseEngine } from '@syncle/core';
 import { api, ApiError } from '@/lib/api';
 import {
   Dialog,

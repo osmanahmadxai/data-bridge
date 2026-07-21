@@ -34,7 +34,7 @@ import {
   type CdcOperation,
   type DatabaseTarget,
   type TargetColumnShape,
-} from '@data-bridge/core';
+} from '@syncle/core';
 import { AdapterPoolService } from '../connections/adapter-pool.service';
 import { ConnectionStoreService } from '../connections/connection-store.service';
 import type { DeliveryOutcome } from './hooks.types';

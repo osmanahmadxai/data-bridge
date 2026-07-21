@@ -12,7 +12,7 @@ import {
   useStartWatch,
   useStopWatch,
 } from '@/lib/queries';
-import { destinationLabel, type EndpointInfo } from '@data-bridge/core';
+import { destinationLabel, type EndpointInfo } from '@syncle/core';
 import { useStudio } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { useConfirm } from '@/components/confirm';

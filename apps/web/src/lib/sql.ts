@@ -1,4 +1,4 @@
-import type { DatabaseEngine } from '@data-bridge/core';
+import type { DatabaseEngine } from '@syncle/core';
 
 /** quote an identifier for the given engine's dialect */
 export function quoteIdent(engine: DatabaseEngine, id: string): string {

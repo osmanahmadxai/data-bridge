@@ -7,7 +7,7 @@
  * truncated response snippet is kept.
  */
 import { Injectable, Logger } from '@nestjs/common';
-import type { HookDeliveryConfig, HttpDestination } from '@data-bridge/core';
+import type { HookDeliveryConfig, HttpDestination } from '@syncle/core';
 import type { DeliveryOutcome } from './hooks.types';
 
 const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);

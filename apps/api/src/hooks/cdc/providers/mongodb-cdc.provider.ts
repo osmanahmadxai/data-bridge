@@ -22,7 +22,7 @@ import type {
   CdcReadinessDTO,
   ConnectionConfig,
   DatabaseEngine,
-} from '@data-bridge/core';
+} from '@syncle/core';
 import type { ResolvedHook } from '../../hooks.types';
 import { backoffMs, delay, type CdcChange, type CdcProvider, type CdcStreamContext, type CdcStreamHandle } from '../cdc-provider';
 

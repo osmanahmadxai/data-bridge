@@ -2,13 +2,13 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="apps/web/public/logo-white.png">
-  <img alt="Data Bridge" src="apps/web/public/logo-dark.png" width="400">
+  <img alt="Syncle" src="apps/web/public/logo-dark.png" width="400">
 </picture>
 
 ### Keep any databases in sync — live, across engines.
 
 Connect your databases, draw a **bridge** from a source to one or more
-destinations, and Data Bridge keeps them in sync: the moment a row changes in the
+destinations, and Syncle keeps them in sync: the moment a row changes in the
 source, it's written to every destination you linked. Any engine to any engine —
 **PostgreSQL · MySQL/MariaDB · SQLite · MongoDB · Redis** — plus HTTP endpoints
 when you need them.
@@ -38,7 +38,7 @@ What makes the database-to-database sync trustworthy:
   you choose, so replays, retries, and redeliveries never double-write. Inserts,
   updates, **and deletes** all propagate.
 - **Missing table? Auto-create it.** If the destination table/collection doesn't
-  exist, Data Bridge creates it from the source's shape (with cross-engine type
+  exist, Syncle creates it from the source's shape (with cross-engine type
   translation). Or **map and rename columns** yourself — "write this column into
   that column over there."
 - **Live, polled, or one-shot** — you pick how it fires (see triggers below).
@@ -97,7 +97,7 @@ builds the workspace, runs the database migrations, then launches both the API
 and the web app.
 
 ```
-  Data Bridge · ready
+  Syncle · ready
 
     Web  http://localhost:3002   ← open this
     API  http://localhost:4002/api
@@ -113,7 +113,7 @@ Working on the code? `pnpm dev` is the same thing in watch mode.
 > Fix: use Node 22+ (`nvm use`), get pnpm via `corepack enable` instead of your
 > system package manager, then `pnpm install` again.
 
-> The two services back different things. **Postgres** holds Data Bridge's own
+> The two services back different things. **Postgres** holds Syncle's own
 > metadata (saved connections, hooks, runs, deliveries) through Prisma.
 > **Redis** backs the BullMQ queue that runs hooks durably. Connecting
 > databases, browsing data, and building/previewing hooks all work without
@@ -140,7 +140,7 @@ Working on the code? `pnpm dev` is the same thing in watch mode.
 
 ## Source data, when you need it
 
-Data Bridge ships a full database workbench (the "Data sources" surface) — handy
+Syncle ships a full database workbench (the "Data sources" surface) — handy
 for shaping a source and for inspecting what landed in a destination:
 
 - Browse any table — paginated, sortable, multi-condition filters, inline edit,
@@ -160,21 +160,21 @@ pre-seeded with that table as the source.
 A pnpm monorepo with a one-way dependency flow (`web → api → core`):
 
 ```
-data-bridge/
+syncle/
 ├─ packages/
-│  └─ core/            @data-bridge/core — framework-agnostic domain (pure TS)
+│  └─ core/            @syncle/core — framework-agnostic domain (pure TS)
 │     ├─ adapters/       DatabaseAdapter interface + one file per engine
 │     │                  (raw drivers: pg, mysql2, better-sqlite3, mongodb, ioredis)
 │     └─ hooks/          column mapping + cross-engine table translation,
 │                        payload transform, shared bridge schemas (Zod)
 ├─ apps/
-│  ├─ api/             @data-bridge/api — NestJS backend
+│  ├─ api/             @syncle/api — NestJS backend
 │  │  ├─ hooks/          bridge store · run processor · CDC providers ·
 │  │  │                  sink router → database sink + HTTP delivery
 │  │  ├─ connections/    Prisma-backed store · live adapter pool · controllers
 │  │  ├─ common/         crypto · Zod validation · exception filter
 │  │  └─ prisma/         metadata-store schema + migrations
-│  └─ web/             @data-bridge/web — Next.js 15 frontend (shadcn/ui, TanStack)
+│  └─ web/             @syncle/web — Next.js 15 frontend (shadcn/ui, TanStack)
 └─ docker-compose.yml  Postgres (metadata) + Redis (run queue)
 ```
 
@@ -204,7 +204,7 @@ engine's CDC is a single file.
 
 **Two data layers, two right tools.** The databases you connect _to_ have
 unknown, runtime-discovered schemas, so the adapters use raw drivers with fully
-parameterized queries (an ORM can't introspect arbitrary schemas). Data Bridge's
+parameterized queries (an ORM can't introspect arbitrary schemas). Syncle's
 _own_ store has a fixed schema we control, so it uses Prisma with migrations.
 
 > Adding an engine = implement `DatabaseAdapter` and register it. The connection
@@ -224,12 +224,12 @@ Env files are created automatically on first run from the committed
 | `NEXT_PUBLIC_API_URL`         | web   | Base URL of the API                          |
 | `DATABASE_URL`                | api   | Postgres datasource for the metadata store   |
 | `REDIS_URL`                   | api   | Redis backing the bridge-run queue           |
-| `DATABRIDGE_MASTER_KEY`       | api   | base64 32-byte key for secret encryption     |
-| `DATABRIDGE_HOOK_CONCURRENCY` | api   | How many bridge runs may execute in parallel |
+| `SYNCLE_MASTER_KEY`       | api   | base64 32-byte key for secret encryption     |
+| `SYNCLE_HOOK_CONCURRENCY` | api   | How many bridge runs may execute in parallel |
 | `WEB_ORIGIN`                  | api   | CORS origin (defaults to any in dev)         |
 
-If `DATABRIDGE_MASTER_KEY` is unset, a random key is generated under
-`apps/api/.data-bridge/` on first run — set it explicitly in production.
+If `SYNCLE_MASTER_KEY` is unset, a random key is generated under
+`apps/api/.syncle/` on first run — set it explicitly in production.
 
 ## CDC prerequisites
 
@@ -242,7 +242,7 @@ for you and spells out what's missing.
 | PostgreSQL | logical replication    | `wal_level=logical`, a role with REPLICATION (slot/publication auto-made)                                   |
 | MySQL      | binary log             | `log_bin=ON`, `binlog_format=ROW`, `binlog_row_image=FULL`, REPLICATION grants                              |
 | MongoDB    | change streams         | a replica set (a single-node one is fine for dev); pre-images auto-enabled so deletes propagate by your key |
-| Redis      | keyspace notifications | `notify-keyspace-events` (Data Bridge enables it when it can)                                               |
+| Redis      | keyspace notifications | `notify-keyspace-events` (Syncle enables it when it can)                                               |
 | SQLite     | —                      | not supported; use a watch hook instead                                                                     |
 
 > Redis CDC is real-time only and non-durable — events that happen while Data
@@ -275,7 +275,7 @@ React Flow · Zod · Vitest.
 - All user values are passed as bound parameters; identifiers are dialect-quoted.
 - Hook payloads are built by structured token substitution — no string injection,
   no code execution.
-- Data Bridge runs locally with no auth layer. Add authentication, and restrict
+- Syncle runs locally with no auth layer. Add authentication, and restrict
   which destinations (database connections / endpoint URLs) a bridge may write
   to, before exposing it to an untrusted network.
 

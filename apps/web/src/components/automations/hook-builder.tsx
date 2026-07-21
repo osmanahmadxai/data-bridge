@@ -21,7 +21,7 @@ import {
   type HookInputDTO,
   type SortSpec,
   type TableSchema,
-} from '@data-bridge/core';
+} from '@syncle/core';
 import { api, ApiError } from '@/lib/api';
 import {
   useBrowse,
@@ -173,7 +173,7 @@ export function HookBuilder() {
   const [cdcOps, setCdcOps] = useState<Set<'insert' | 'update' | 'delete'>>(
     new Set(['insert', 'update', 'delete']),
   );
-  const [readiness, setReadiness] = useState<import('@data-bridge/core').CdcReadiness | null>(null);
+  const [readiness, setReadiness] = useState<import('@syncle/core').CdcReadiness | null>(null);
   const [checkingCdc, setCheckingCdc] = useState(false);
 
   // ----- payload / destination / delivery -----
@@ -300,7 +300,7 @@ export function HookBuilder() {
     setEnabled(true);
   }
 
-  function loadHook(h: import('@data-bridge/core').Hook) {
+  function loadHook(h: import('@syncle/core').Hook) {
     setName(h.name);
     setConnectionId(h.source.connectionId);
     setDatabase(h.source.database ?? '');

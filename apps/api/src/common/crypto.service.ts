@@ -1,7 +1,7 @@
 /**
  * credential encryption at rest (AES-256-GCM).
  *
- * key precedence: DATABRIDGE_MASTER_KEY (base64, 32 bytes) when set, otherwise a
+ * key precedence: SYNCLE_MASTER_KEY (base64, 32 bytes) when set, otherwise a
  * random key generated once and persisted to the data dir with 0600 perms.
  * ciphertext format is "iv:tag:data", all base64
  */
@@ -30,7 +30,7 @@ export class CryptoService {
       const key = Buffer.from(runtimeConfig.masterKey, 'base64');
       if (key.length !== 32) {
         throw new Error(
-          'DATABRIDGE_MASTER_KEY must be a base64-encoded 32-byte value',
+          'SYNCLE_MASTER_KEY must be a base64-encoded 32-byte value',
         );
       }
       this.key = key;
@@ -49,8 +49,8 @@ export class CryptoService {
     // fine for local dev, but the key then lives beside the data it protects —
     // a backup of the data dir carries both. production must set the env key
     new Logger('Crypto').warn(
-      `DATABRIDGE_MASTER_KEY is not set — generated a key at ${runtimeConfig.keyFile}. ` +
-        'Set DATABRIDGE_MASTER_KEY in production.',
+      `SYNCLE_MASTER_KEY is not set — generated a key at ${runtimeConfig.keyFile}. ` +
+        'Set SYNCLE_MASTER_KEY in production.',
     );
     writeFileSync(runtimeConfig.keyFile, key.toString('base64'), {
       mode: 0o600,

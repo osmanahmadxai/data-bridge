@@ -1,6 +1,6 @@
 /**
  * MySQL CDC via the binary log (row-based replication), read with
- * `@powersync/mysql-zongji`. Data Bridge registers as a replication client and
+ * `@powersync/mysql-zongji`. Syncle registers as a replication client and
  * decodes Write/Update/Delete row events in real time. durable and resumable:
  * the cursor is the binlog `"file:position"`, so a restart resumes exactly
  * where it left off.
@@ -18,7 +18,7 @@ import type {
   CdcReadinessDTO,
   ConnectionConfig,
   DatabaseEngine,
-} from '@data-bridge/core';
+} from '@syncle/core';
 import { AdapterPoolService } from '../../../connections/adapter-pool.service';
 import type { ResolvedHook } from '../../hooks.types';
 import {

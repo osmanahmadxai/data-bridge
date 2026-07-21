@@ -20,7 +20,7 @@ import type {
   FilterOperator,
   FilterSpec,
   SortSpec,
-} from '@data-bridge/core';
+} from '@syncle/core';
 import { api, ApiError } from '@/lib/api';
 import { exportRows } from '@/lib/export';
 import { useBrowse, useConnections, useDrivers } from '@/lib/queries';

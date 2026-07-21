@@ -11,7 +11,7 @@ import {
   type ConnectionInput,
   DEFAULT_WORKSPACE_ID,
   NotFoundError,
-} from '@data-bridge/core';
+} from '@syncle/core';
 import { CryptoService } from '../common/crypto.service';
 import { PrismaService } from '../common/prisma.service';
 

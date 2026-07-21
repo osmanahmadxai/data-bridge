@@ -5,7 +5,7 @@
  * `pollIntervalMs`. schedulers persist in Redis, so listening survives restarts;
  * `onModuleInit` re-registers any that should still be active.
  *
- * the change-detection itself is the pure engine in `@data-bridge/core`
+ * the change-detection itself is the pure engine in `@syncle/core`
  * (`watchQuery` / `advanceCursor`); this service is the I/O around it: fetch a
  * page, deliver the new rows, persist the advanced cursor.
  */
@@ -24,7 +24,7 @@ import {
   watchStrategySchema,
   type HookRun,
   type WatchCursor,
-} from '@data-bridge/core';
+} from '@syncle/core';
 import { Queue } from 'bullmq';
 import { AdapterPoolService } from '../connections/adapter-pool.service';
 import { PrismaService } from '../common/prisma.service';

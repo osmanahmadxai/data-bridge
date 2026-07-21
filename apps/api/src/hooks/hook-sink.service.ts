@@ -13,7 +13,7 @@ import {
   renderBatch,
   renderRow,
   type CdcOperation,
-} from '@data-bridge/core';
+} from '@syncle/core';
 import { DeliveryService } from './delivery.service';
 import { DatabaseSinkService } from './database-sink.service';
 import type { DeliveryOutcome, ResolvedHook } from './hooks.types';

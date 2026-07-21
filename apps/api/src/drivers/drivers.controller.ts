@@ -1,5 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
-import { listDrivers, toDriverInfo, type DriverInfo } from '@data-bridge/core/adapters';
+import { listDrivers, toDriverInfo, type DriverInfo } from '@syncle/core/adapters';
 
 @Controller('drivers')
 export class DriversController {

@@ -644,7 +644,7 @@ export abstract class BaseSqlAdapter implements DatabaseAdapter {
 
     if (opts.format === 'json') {
       const doc: BackupDocument = {
-        dataBridge: 'backup',
+        syncle: 'backup',
         version: 1,
         engine: this.engine,
         database,
@@ -669,7 +669,7 @@ export abstract class BaseSqlAdapter implements DatabaseAdapter {
 
     // SQL dump: DDL + INSERT statements
     const out: string[] = [
-      `-- Data Bridge SQL backup`,
+      `-- Syncle SQL backup`,
       `-- engine: ${this.engine}`,
       `-- database: ${database}`,
       ``,
@@ -750,8 +750,8 @@ export abstract class BaseSqlAdapter implements DatabaseAdapter {
     } catch {
       throw new BadRequestError('Backup file is not valid JSON');
     }
-    if (doc.dataBridge !== 'backup' || !Array.isArray(doc.tables)) {
-      throw new BadRequestError('Not a Data Bridge backup file');
+    if (doc.syncle !== 'backup' || !Array.isArray(doc.tables)) {
+      throw new BadRequestError('Not a Syncle backup file');
     }
 
     let rows = 0;
@@ -890,7 +890,7 @@ function normalizeForInsert(value: unknown): unknown {
 /**
  * split a `.sql` script into individual statements, respecting single-quoted
  * strings (with `''` escapes) and `--` / block comments. good enough for
- * Data Bridge-generated dumps and typical hand-written scripts
+ * Syncle-generated dumps and typical hand-written scripts
  */
 function splitSqlStatements(sql: string): string[] {
   const out: string[] = [];

@@ -17,7 +17,7 @@ import type {
   LoginDTO,
   SetupDTO,
   WorkspaceInputDTO,
-} from '@data-bridge/core';
+} from '@syncle/core';
 import { api } from './api';
 import { useStudio } from './store';
 

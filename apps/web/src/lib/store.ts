@@ -1,7 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
-import type { RelationKind } from '@data-bridge/core';
+import type { RelationKind } from '@syncle/core';
 
 export type StudioTab = 'data' | 'query' | 'structure' | 'diagram';
 
@@ -91,7 +91,7 @@ interface StudioState {
 const initial = freshTabs();
 
 /** localStorage key for the last active workspace (survives refreshes) */
-const WORKSPACE_STORAGE_KEY = 'data-bridge.activeWorkspaceId';
+const WORKSPACE_STORAGE_KEY = 'syncle.activeWorkspaceId';
 
 export function readPersistedWorkspaceId(): string | null {
   if (typeof window === 'undefined') return null;

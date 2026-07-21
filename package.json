@@ -1,17 +1,17 @@
 {
-  "name": "data-bridge",
+  "name": "syncle",
   "version": "0.1.0",
   "private": true,
-  "description": "Data Bridge — keep any databases in sync, live and across engines (PostgreSQL, MySQL, SQLite, MongoDB, Redis), with HTTP endpoints as an extra destination.",
+  "description": "Syncle — keep any databases in sync, live and across engines (PostgreSQL, MySQL, SQLite, MongoDB, Redis), with HTTP endpoints as an extra destination.",
   "author": "Osman Ahmadzai",
   "license": "MIT",
-  "homepage": "https://github.com/ozmanghani/data-bridge#readme",
+  "homepage": "https://github.com/ozmanghani/syncle#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ozmanghani/data-bridge.git"
+    "url": "git+https://github.com/ozmanghani/syncle.git"
   },
   "bugs": {
-    "url": "https://github.com/ozmanghani/data-bridge/issues"
+    "url": "https://github.com/ozmanghani/syncle/issues"
   },
   "engines": {
     "node": ">=22"
@@ -27,15 +27,15 @@
     ]
   },
   "scripts": {
-    "dev": "node scripts/setup-env.mjs && pnpm --filter @data-bridge/core build && concurrently -n api,web -c magenta,cyan \"pnpm --filter @data-bridge/api dev\" \"pnpm --filter @data-bridge/web dev\"",
-    "dev:api": "pnpm --filter @data-bridge/api dev",
-    "dev:web": "pnpm --filter @data-bridge/web dev",
-    "start": "node scripts/setup-env.mjs && pnpm build && concurrently -n api,web -c magenta,cyan \"pnpm --filter @data-bridge/api start\" \"pnpm --filter @data-bridge/web start\"",
-    "build": "pnpm --filter @data-bridge/core build && pnpm --filter @data-bridge/api build && pnpm --filter @data-bridge/web build",
-    "build:core": "pnpm --filter @data-bridge/core build",
-    "migrate": "pnpm --filter @data-bridge/api migrate:deploy",
-    "migrate:dev": "pnpm --filter @data-bridge/api migrate:dev",
-    "db:studio": "pnpm --filter @data-bridge/api exec prisma studio",
+    "dev": "node scripts/setup-env.mjs && pnpm --filter @syncle/core build && concurrently -n api,web -c magenta,cyan \"pnpm --filter @syncle/api dev\" \"pnpm --filter @syncle/web dev\"",
+    "dev:api": "pnpm --filter @syncle/api dev",
+    "dev:web": "pnpm --filter @syncle/web dev",
+    "start": "node scripts/setup-env.mjs && pnpm build && concurrently -n api,web -c magenta,cyan \"pnpm --filter @syncle/api start\" \"pnpm --filter @syncle/web start\"",
+    "build": "pnpm --filter @syncle/core build && pnpm --filter @syncle/api build && pnpm --filter @syncle/web build",
+    "build:core": "pnpm --filter @syncle/core build",
+    "migrate": "pnpm --filter @syncle/api migrate:deploy",
+    "migrate:dev": "pnpm --filter @syncle/api migrate:dev",
+    "db:studio": "pnpm --filter @syncle/api exec prisma studio",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",

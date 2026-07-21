@@ -9,7 +9,7 @@ import {
   appSettingsSchema,
   type AppSettings,
   type AppSettingsDTO,
-} from '@data-bridge/core';
+} from '@syncle/core';
 import { PrismaService } from '../common/prisma.service';
 import { runtimeConfig } from '../common/runtime-config';
 

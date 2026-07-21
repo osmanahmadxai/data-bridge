@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Data Bridge is pre-1.0 and moves fast; security fixes land on `main` and the
+Syncle is pre-1.0 and moves fast; security fixes land on `main` and the
 latest release only.
 
 | Version | Supported |
@@ -26,7 +26,7 @@ you'd rather stay anonymous.
 
 ## Scope notes
 
-Data Bridge is built to run on a trusted network. A few things are deliberately
+Syncle is built to run on a trusted network. A few things are deliberately
 out of scope unless you've deployed it differently:
 
 - **No built-in auth layer.** The app assumes you put it behind your own

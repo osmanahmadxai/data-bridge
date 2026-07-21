@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
-import { UnauthorizedError } from '@data-bridge/core';
+import { UnauthorizedError } from '@syncle/core';
 import { AuthService } from './auth.service';
 import { IS_PUBLIC } from './public.decorator';
 

@@ -47,7 +47,7 @@ export function LoginScreen() {
         <CardHeader className="items-center text-center">
           <Image
             src="/logo-dark.png"
-            alt="Data Bridge"
+            alt="Syncle"
             width={747}
             height={412}
             priority
@@ -55,7 +55,7 @@ export function LoginScreen() {
           />
           <Image
             src="/logo-white.png"
-            alt="Data Bridge"
+            alt="Syncle"
             width={747}
             height={412}
             priority
@@ -63,7 +63,7 @@ export function LoginScreen() {
           />
           <CardTitle>Sign in</CardTitle>
           <CardDescription>
-            Enter your credentials to access Data Bridge.
+            Enter your credentials to access Syncle.
           </CardDescription>
         </CardHeader>
         <CardContent>

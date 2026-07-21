@@ -17,7 +17,7 @@ import {
   type LoginDTO,
   type SetupDTO,
   UnauthorizedError,
-} from '@data-bridge/core';
+} from '@syncle/core';
 import type { AppUser } from '@prisma/client';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { AuthService } from './auth.service';

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Loader2, PlugZap } from 'lucide-react';
 import { toast } from 'sonner';
-import type { ConnectionInputDTO, DatabaseEngine } from '@data-bridge/core';
+import type { ConnectionInputDTO, DatabaseEngine } from '@syncle/core';
 import { api, ApiError } from '@/lib/api';
 import {
   useCreateConnection,

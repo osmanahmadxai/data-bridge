@@ -3,9 +3,9 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 function resolveDataDir(): string {
-  const dir = process.env.DATABRIDGE_DATA_DIR
-    ? resolve(process.env.DATABRIDGE_DATA_DIR)
-    : resolve(process.cwd(), '.data-bridge');
+  const dir = process.env.SYNCLE_DATA_DIR
+    ? resolve(process.env.SYNCLE_DATA_DIR)
+    : resolve(process.cwd(), '.syncle');
   // 0o700: the dir holds the master key, keep it out of reach of other users
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 });
   return dir;
@@ -15,11 +15,11 @@ const dataDir = resolveDataDir();
 
 export const runtimeConfig = {
   dataDir,
-  storeFile: resolve(dataDir, 'data-bridge.db'),
+  storeFile: resolve(dataDir, 'syncle.db'),
   keyFile: resolve(dataDir, 'master.key'),
-  masterKey: process.env.DATABRIDGE_MASTER_KEY ?? null,
-  maxQueryRows: Number(process.env.DATABRIDGE_MAX_QUERY_ROWS ?? 5000),
-  poolIdleMs: Number(process.env.DATABRIDGE_POOL_IDLE_MS ?? 300_000),
+  masterKey: process.env.SYNCLE_MASTER_KEY ?? null,
+  maxQueryRows: Number(process.env.SYNCLE_MAX_QUERY_ROWS ?? 5000),
+  poolIdleMs: Number(process.env.SYNCLE_POOL_IDLE_MS ?? 300_000),
   port: Number(process.env.PORT ?? 4000),
   // never fall back to reflecting arbitrary origins: with credentialed CORS
   // that would let any web page the operator visits call this API
@@ -29,7 +29,7 @@ export const runtimeConfig = {
   /** Redis URL backing the BullMQ hook-run queue */
   redisUrl: process.env.REDIS_URL ?? 'redis://localhost:6379',
   /** worker concurrency: how many hook runs may run in parallel */
-  hookConcurrency: Number(process.env.DATABRIDGE_HOOK_CONCURRENCY ?? 5),
+  hookConcurrency: Number(process.env.SYNCLE_HOOK_CONCURRENCY ?? 5),
 } as const;
 
 /**

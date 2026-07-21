@@ -18,7 +18,7 @@ What you thought should happen instead.
 3.
 
 **Environment**
-- Data Bridge version / commit:
+- Syncle version / commit:
 - Database engine + version (the one you connected to):
 - OS:
 - Node / pnpm version:

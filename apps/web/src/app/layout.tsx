@@ -4,7 +4,7 @@ import { Toaster } from '@/components/ui/sonner';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Data Bridge — Sync any databases, live',
+  title: 'Syncle — Sync any databases, live',
   description:
     'Keep any databases in sync across engines — PostgreSQL, MySQL, SQLite, MongoDB, Redis — in real time with CDC, polling, or one-shot replay. HTTP endpoints supported too.',
 };

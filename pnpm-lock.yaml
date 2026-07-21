@@ -23,7 +23,7 @@ importers:
 
   apps/api:
     dependencies:
-      '@data-bridge/core':
+      '@syncle/core':
         specifier: workspace:*
         version: link:../../packages/core
       '@nestjs/bullmq':
@@ -96,7 +96,7 @@ importers:
 
   apps/web:
     dependencies:
-      '@data-bridge/core':
+      '@syncle/core':
         specifier: workspace:*
         version: link:../../packages/core
       '@monaco-editor/react':

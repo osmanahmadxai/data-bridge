@@ -20,7 +20,7 @@ import {
   BadRequestError,
   type BrowseParams,
   type SortSpec,
-} from '@data-bridge/core';
+} from '@syncle/core';
 import type { Job } from 'bullmq';
 import { AdapterPoolService } from '../connections/adapter-pool.service';
 import { runtimeConfig } from '../common/runtime-config';

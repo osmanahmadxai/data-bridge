@@ -3,7 +3,7 @@
  *
  * IMPORTANT, this is real-time but NON-DURABLE by nature:
  *  - keyspace notifications are fire-and-forget pub/sub with no backlog. any
- *    event published while Data Bridge is disconnected (restart, network blip)
+ *    event published while Syncle is disconnected (restart, network blip)
  *    is gone for good, there's no resume cursor.
  *  - the event carries only the KEY, not the value, so we do a best-effort
  *    follow-up read to fill the row (the key may already be gone for deletes).
@@ -21,7 +21,7 @@ import type {
   CdcReadinessDTO,
   ConnectionConfig,
   DatabaseEngine,
-} from '@data-bridge/core';
+} from '@syncle/core';
 import type { ResolvedHook } from '../../hooks.types';
 import type {
   CdcChange,
@@ -102,11 +102,11 @@ export class RedisCdcProvider implements CdcProvider {
       });
       if (!ok) {
         instructions.push(
-          'Enable keyspace notifications:  CONFIG SET notify-keyspace-events EA  (or set `notify-keyspace-events EA` in redis.conf). Data Bridge will attempt this automatically on start; managed Redis may require enabling it in the provider console.',
+          'Enable keyspace notifications:  CONFIG SET notify-keyspace-events EA  (or set `notify-keyspace-events EA` in redis.conf). Syncle will attempt this automatically on start; managed Redis may require enabling it in the provider console.',
         );
       }
       instructions.push(
-        'Note: Redis change capture is real-time only. Events that occur while Data Bridge is offline cannot be recovered, and the changed value is fetched after the fact (best-effort).',
+        'Note: Redis change capture is real-time only. Events that occur while Syncle is offline cannot be recovered, and the changed value is fetched after the fact (best-effort).',
       );
       return { engine: 'redis', supported: true, ready: ok, checks, instructions };
     } catch (err) {
