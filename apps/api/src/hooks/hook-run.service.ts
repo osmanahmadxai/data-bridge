@@ -19,7 +19,7 @@ import {
   type HookRun,
   type HookRunStatus,
   NotFoundError,
-} from '@data-bridge/core';
+} from '@syncle/core';
 import { Queue } from 'bullmq';
 import type {
   HookDelivery as DeliveryRow,

@@ -23,7 +23,7 @@ import {
   Webhook,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { BackupFormat, RelationKind, TableSchema } from '@data-bridge/core';
+import type { BackupFormat, RelationKind, TableSchema } from '@syncle/core';
 import { api, ApiError } from '@/lib/api';
 import { downloadText } from '@/lib/export';
 import {

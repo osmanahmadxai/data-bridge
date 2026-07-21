@@ -9,7 +9,7 @@ import type {
   HookSource,
   HookTransformConfig,
   HookTrigger,
-} from '@data-bridge/core';
+} from '@syncle/core';
 
 /** a hook with its auth secret decrypted, server-internal use only */
 export interface ResolvedHook {

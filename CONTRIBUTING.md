@@ -1,19 +1,19 @@
-# Contributing to Data Bridge
+# Contributing to Syncle
 
 Thanks for taking the time to contribute! This guide covers everything you need
 to get a change merged.
 
 ## Getting set up
 
-Data Bridge is a pnpm monorepo (`web → api → core`). You'll need:
+Syncle is a pnpm monorepo (`web → api → core`). You'll need:
 
 - **Node.js ≥ 22** (the MySQL binlog reader requires it)
 - **pnpm ≥ 10**
 - **Docker** (for the bundled Postgres + Redis)
 
 ```bash
-git clone https://github.com/ozmanghani/data-bridge.git
-cd data-bridge
+git clone https://github.com/ozmanghani/syncle.git
+cd syncle
 pnpm install
 docker compose up -d          # postgres (metadata) + redis (queue)
 pnpm dev                      # API + web in watch mode
@@ -25,9 +25,9 @@ The web app comes up on `http://localhost:3002`, the API on
 ## Project layout
 
 ```
-packages/core   @data-bridge/core — pure domain logic, adapters, schemas (no framework)
-apps/api        @data-bridge/api  — NestJS backend, Prisma, BullMQ, CDC providers
-apps/web        @data-bridge/web  — Next.js frontend
+packages/core   @syncle/core — pure domain logic, adapters, schemas (no framework)
+apps/api        @syncle/api  — NestJS backend, Prisma, BullMQ, CDC providers
+apps/web        @syncle/web  — Next.js frontend
 ```
 
 The dependency direction is one-way: `core` never imports from `api`/`web`, and

@@ -19,7 +19,7 @@ import type {
   CdcReadinessDTO,
   ConnectionConfig,
   DatabaseEngine,
-} from '@data-bridge/core';
+} from '@syncle/core';
 import type { ResolvedHook } from '../hooks.types';
 
 /** one decoded change, normalized across every engine */

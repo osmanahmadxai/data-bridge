@@ -17,7 +17,7 @@ import type {
   CdcReadinessDTO,
   ConnectionConfig,
   DatabaseEngine,
-} from '@data-bridge/core';
+} from '@syncle/core';
 import { LogicalReplicationService, PgoutputPlugin } from 'pg-logical-replication';
 import { AdapterPoolService } from '../../../connections/adapter-pool.service';
 import type { ResolvedHook } from '../../hooks.types';
@@ -103,10 +103,10 @@ export class PostgresCdcProvider implements CdcProvider {
   /* ----- provisioning ----- */
 
   private pubName(hookId: string): string {
-    return `databridge_pub_${hookId.replace(/-/g, '')}`;
+    return `syncle_pub_${hookId.replace(/-/g, '')}`;
   }
   private slotName(hookId: string): string {
-    return `databridge_slot_${hookId.replace(/-/g, '')}`;
+    return `syncle_slot_${hookId.replace(/-/g, '')}`;
   }
   private quoteIdent(id: string): string {
     return `"${id.replace(/"/g, '""')}"`;

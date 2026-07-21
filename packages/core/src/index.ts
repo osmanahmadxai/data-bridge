@@ -2,7 +2,7 @@
  * web-safe entry point: types, error classes, and validation schemas only.
  * importing this never pulls in a native database driver, so it's safe for the
  * browser bundle. server code that needs to open connections imports from
- * `@data-bridge/core/adapters` instead.
+ * `@syncle/core/adapters` instead.
  */
 export * from './adapters/types';
 export * from './errors';

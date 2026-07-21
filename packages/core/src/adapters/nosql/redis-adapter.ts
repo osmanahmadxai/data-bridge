@@ -373,7 +373,7 @@ export class RedisAdapter implements DatabaseAdapter {
       );
     }
     const doc: BackupDocument = {
-      dataBridge: 'backup',
+      syncle: 'backup',
       version: 1,
       engine: this.engine,
       database: `db${this.config.options?.db ?? this.config.database ?? 0}`,
@@ -400,8 +400,8 @@ export class RedisAdapter implements DatabaseAdapter {
     } catch {
       throw new BadRequestError('Backup file is not valid JSON');
     }
-    if (doc.dataBridge !== 'backup' || !Array.isArray(doc.tables)) {
-      throw new BadRequestError('Not a Data Bridge backup file');
+    if (doc.syncle !== 'backup' || !Array.isArray(doc.tables)) {
+      throw new BadRequestError('Not a Syncle backup file');
     }
     const client = this.getClient();
     if (client.status !== 'ready') await client.connect().catch(() => {});

@@ -1,7 +1,7 @@
 'use client';
 
 import { Plus, Radio, Zap, Network, Workflow, AlertTriangle } from 'lucide-react';
-import { destinationLabel, type Hook } from '@data-bridge/core';
+import { destinationLabel, type Hook } from '@syncle/core';
 import { useHooks, useHookStatuses } from '@/lib/queries';
 import { useStudio } from '@/lib/store';
 import { cn } from '@/lib/utils';

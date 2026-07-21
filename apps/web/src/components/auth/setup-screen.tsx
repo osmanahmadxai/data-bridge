@@ -56,7 +56,7 @@ export function SetupScreen() {
         <CardHeader className="items-center text-center">
           <Image
             src="/logo-dark.png"
-            alt="Data Bridge"
+            alt="Syncle"
             width={747}
             height={412}
             priority
@@ -64,7 +64,7 @@ export function SetupScreen() {
           />
           <Image
             src="/logo-white.png"
-            alt="Data Bridge"
+            alt="Syncle"
             width={747}
             height={412}
             priority
@@ -73,7 +73,7 @@ export function SetupScreen() {
           <CardTitle>Create the admin account</CardTitle>
           <CardDescription>
             This is the first run. The account you create here is the single
-            operator that protects every Data Bridge endpoint.
+            operator that protects every Syncle endpoint.
           </CardDescription>
         </CardHeader>
         <CardContent>

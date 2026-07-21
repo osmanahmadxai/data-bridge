@@ -72,7 +72,7 @@ export function Studio() {
                 {/* dark artwork in light mode, white artwork in dark mode */}
                 <Image
                   src="/logo-dark.png"
-                  alt="Data Bridge"
+                  alt="Syncle"
                   width={747}
                   height={412}
                   priority
@@ -80,7 +80,7 @@ export function Studio() {
                 />
                 <Image
                   src="/logo-white.png"
-                  alt="Data Bridge"
+                  alt="Syncle"
                   width={747}
                   height={412}
                   priority

@@ -18,7 +18,7 @@ reaches 1.0.
 
 ### Changed
 
-- Renamed the project to **Data Bridge**.
+- Renamed the project to **Syncle**.
 - The internal metadata store now runs on **PostgreSQL** instead of SQLite.
 - The live delivery monitor fetches one final time when a run finishes, so the
   last cells settle correctly; added a LIVE indicator and auto-follow paging.

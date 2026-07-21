@@ -19,7 +19,7 @@ import {
   ConflictError,
   UnauthorizedError,
   type AuthUser,
-} from '@data-bridge/core';
+} from '@syncle/core';
 import type { AppUser } from '@prisma/client';
 import { CryptoService } from '../common/crypto.service';
 import { PrismaService } from '../common/prisma.service';

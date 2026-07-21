@@ -46,7 +46,7 @@ async function bootstrap(): Promise<void> {
   // plain console.log so it always shows regardless of the nest log level
   const webPort = process.env.WEB_PORT ?? '3002';
   console.log(
-    `\n  Data Bridge · ready\n\n` +
+    `\n  Syncle · ready\n\n` +
       `    Web  http://localhost:${webPort}   ← open this\n` +
       `    API  http://localhost:${runtimeConfig.port}/api\n`,
   );

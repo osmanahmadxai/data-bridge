@@ -13,7 +13,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Database, Globe, Loader2, Radio, Zap, Plus, Network } from 'lucide-react';
-import type { ConnectionConfig, Hook } from '@data-bridge/core';
+import type { ConnectionConfig, Hook } from '@syncle/core';
 import { useConnections, useHooks, useHookStatuses } from '@/lib/queries';
 import { useStudio } from '@/lib/store';
 import { cn } from '@/lib/utils';

@@ -11,7 +11,7 @@ import {
   type Workspace,
   type WorkspaceInputDTO,
   workspaceInputSchema,
-} from '@data-bridge/core';
+} from '@syncle/core';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { HookStoreService } from '../hooks/hook-store.service';
 import { HookWatchService } from '../hooks/hook-watch.service';

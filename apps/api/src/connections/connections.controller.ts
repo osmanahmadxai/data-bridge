@@ -24,7 +24,7 @@ import {
   restoreSchema,
   updateRowSchema,
   type ConnectionInputDTO,
-} from '@data-bridge/core';
+} from '@syncle/core';
 import type { z } from 'zod';
 import { PrismaService } from '../common/prisma.service';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';

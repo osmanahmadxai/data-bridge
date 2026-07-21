@@ -15,7 +15,7 @@ import type {
   DeliveryStatus,
   EndpointInfo,
   HookDelivery,
-} from '@data-bridge/core';
+} from '@syncle/core';
 import { ApiError } from '@/lib/api';
 import { useHookDeliveries, useSkipDeliveries } from '@/lib/queries';
 import { cn } from '@/lib/utils';

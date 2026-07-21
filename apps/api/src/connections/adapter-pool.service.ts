@@ -4,8 +4,8 @@
  * evicted after a period of inactivity
  */
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
-import { createAdapter } from '@data-bridge/core/adapters';
-import type { ConnectionConfig, DatabaseAdapter } from '@data-bridge/core';
+import { createAdapter } from '@syncle/core/adapters';
+import type { ConnectionConfig, DatabaseAdapter } from '@syncle/core';
 import { SettingsStoreService } from '../settings/settings-store.service';
 import { ConnectionStoreService } from './connection-store.service';
 

@@ -2,7 +2,7 @@
 
 import { Ban, Loader2, Play, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
-import type { EndpointInfo, HookRun, HookRunStatus } from '@data-bridge/core';
+import type { EndpointInfo, HookRun, HookRunStatus } from '@syncle/core';
 import { ApiError } from '@/lib/api';
 import {
   useCancelHookRun,

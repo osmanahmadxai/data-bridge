@@ -28,7 +28,7 @@ import {
   renderRow,
   skipSchema,
   startRunSchema,
-} from '@data-bridge/core';
+} from '@syncle/core';
 import { AdapterPoolService } from '../connections/adapter-pool.service';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { DatabaseSinkService } from './database-sink.service';

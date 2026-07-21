@@ -3,7 +3,7 @@ import {
   appSettingsSchema,
   type AppSettings,
   type AppSettingsDTO,
-} from '@data-bridge/core';
+} from '@syncle/core';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { SettingsStoreService } from './settings-store.service';
 

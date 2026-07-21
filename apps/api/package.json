@@ -1,8 +1,8 @@
 {
-  "name": "@data-bridge/api",
+  "name": "@syncle/api",
   "version": "0.1.0",
   "private": true,
-  "description": "Data Bridge backend — NestJS API that runs cross-engine database-to-database sync bridges (replay, polling, and CDC).",
+  "description": "Syncle backend — NestJS API that runs cross-engine database-to-database sync bridges (replay, polling, and CDC).",
   "scripts": {
     "build": "prisma generate && nest build",
     "dev": "prisma generate && prisma migrate deploy && nest start --watch",
@@ -21,7 +21,7 @@
     "@nestjs/platform-express": "^10.4.7",
     "@powersync/mysql-zongji": "^0.6.0",
     "@prisma/client": "^5.22.0",
-    "@data-bridge/core": "workspace:*",
+    "@syncle/core": "workspace:*",
     "bullmq": "^5.34.0",
     "dotenv": "^16.4.5",
     "ioredis": "^5.4.1",

@@ -1,5 +1,5 @@
 /**
- * typed client for the Data Bridge NestJS API. unwraps the `{ data }` envelope,
+ * typed client for the Syncle NestJS API. unwraps the `{ data }` envelope,
  * throws a structured {@link ApiError} on `{ error }` responses
  */
 import type {
@@ -31,7 +31,7 @@ import type {
   UpdateRowParams,
   Workspace,
   WorkspaceInputDTO,
-} from '@data-bridge/core';
+} from '@syncle/core';
 
 const BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api';
@@ -63,7 +63,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     });
   } catch (err) {
     throw new ApiError(
-      `Cannot reach the Data Bridge API at ${BASE_URL}. Is it running?`,
+      `Cannot reach the Syncle API at ${BASE_URL}. Is it running?`,
       'NETWORK',
       0,
       (err as Error).message,

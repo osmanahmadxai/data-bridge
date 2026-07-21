@@ -6,7 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { AppError } from '@data-bridge/core';
+import { AppError } from '@syncle/core';
 
 /**
  * maps domain {@link AppError}s (and any uncaught error) to a consistent JSON
@@ -15,7 +15,7 @@ import { AppError } from '@data-bridge/core';
  */
 @Catch()
 export class AppExceptionFilter implements ExceptionFilter {
-  private readonly logger = new Logger('Data Bridge');
+  private readonly logger = new Logger('Syncle');
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const res = host.switchToHttp().getResponse<Response>();

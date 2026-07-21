@@ -362,7 +362,7 @@ export class MongodbAdapter implements DatabaseAdapter {
     }
 
     const doc: BackupDocument = {
-      dataBridge: 'backup',
+      syncle: 'backup',
       version: 1,
       engine: this.engine,
       database: db.databaseName,
@@ -405,8 +405,8 @@ export class MongodbAdapter implements DatabaseAdapter {
     } catch {
       throw new BadRequestError('Backup file is not valid JSON');
     }
-    if (doc.dataBridge !== 'backup' || !Array.isArray(doc.tables)) {
-      throw new BadRequestError('Not a Data Bridge backup file');
+    if (doc.syncle !== 'backup' || !Array.isArray(doc.tables)) {
+      throw new BadRequestError('Not a Syncle backup file');
     }
     const db = await this.getDb();
     let rows = 0;

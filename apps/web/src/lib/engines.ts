@@ -1,4 +1,4 @@
-import type { DatabaseEngine } from '@data-bridge/core';
+import type { DatabaseEngine } from '@syncle/core';
 
 interface EngineMeta {
   label: string;

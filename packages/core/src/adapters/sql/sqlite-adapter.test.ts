@@ -24,7 +24,7 @@ describe('SqliteAdapter', () => {
   let file: string;
 
   beforeEach(async () => {
-    file = join(tmpdir(), `data-bridge-test-${Date.now()}-${Math.random()}.db`);
+    file = join(tmpdir(), `syncle-test-${Date.now()}-${Math.random()}.db`);
     adapter = new SqliteAdapter(makeConfig(file));
     await adapter.connect();
     await adapter.query(

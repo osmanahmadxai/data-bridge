@@ -10,7 +10,7 @@ import {
   useDeleteWorkspace,
 } from '@/lib/queries';
 import { readPersistedWorkspaceId, useStudio } from '@/lib/store';
-import { DEFAULT_WORKSPACE_ID } from '@data-bridge/core';
+import { DEFAULT_WORKSPACE_ID } from '@syncle/core';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';

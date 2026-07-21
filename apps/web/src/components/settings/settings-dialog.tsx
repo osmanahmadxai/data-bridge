@@ -7,7 +7,7 @@ import type {
   AppSettings,
   AppSettingsDTO,
   AuthUser,
-} from '@data-bridge/core';
+} from '@syncle/core';
 import { ApiError } from '@/lib/api';
 import {
   useAuthStatus,
@@ -32,7 +32,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 type CdcOp = 'insert' | 'update' | 'delete';
 const CDC_OPS: CdcOp[] = ['insert', 'update', 'delete'];
 
-/** ranges mirror appSettingsSchema in @data-bridge/core */
+/** ranges mirror appSettingsSchema in @syncle/core */
 const RANGES = {
   defaultPollIntervalMs: { min: 1000, max: 3_600_000 },
   defaultMaxPerPoll: { min: 1, max: 5000 },

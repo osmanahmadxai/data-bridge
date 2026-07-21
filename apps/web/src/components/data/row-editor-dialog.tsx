@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import type { QueryColumn } from '@data-bridge/core';
+import type { QueryColumn } from '@syncle/core';
 import { api, ApiError } from '@/lib/api';
 import {
   Dialog,

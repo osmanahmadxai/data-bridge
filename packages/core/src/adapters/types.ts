@@ -1,7 +1,7 @@
 /**
  * core adapter contract.
  *
- * every database engine Data Bridge supports (relational, document, key-value,
+ * every database engine Syncle supports (relational, document, key-value,
  * or anything added later) implements {@link DatabaseAdapter}. the rest of the
  * app (API routes, UI) depends ONLY on these types, never on a concrete driver.
  * so adding a new engine means: implement this interface and register it, that's it.
@@ -309,7 +309,7 @@ export interface BackupOptions {
 
 /** the portable JSON backup shape (also embedded inside `json` dumps) */
 export interface BackupDocument {
-  dataBridge: 'backup';
+  syncle: 'backup';
   version: 1;
   engine: DatabaseEngine;
   database: string;
