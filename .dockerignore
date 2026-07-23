@@ -1,0 +1,12 @@
+node_modules
+**/node_modules
+**/dist
+apps/web/.next
+packages/core/dist
+**/.env
+**/.env.local
+**/.syncle
+.git
+.github
+*.log
+.DS_Store

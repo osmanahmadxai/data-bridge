@@ -245,8 +245,8 @@ for you and spells out what's missing.
 | Redis      | keyspace notifications | `notify-keyspace-events` (Syncle enables it when it can)                                               |
 | SQLite     | —                      | not supported; use a watch hook instead                                                                     |
 
-> Redis CDC is real-time only and non-durable — events that happen while Data
-> Bridge is offline can't be recovered, so prefer a watch hook there if you need
+> Redis CDC is real-time only and non-durable — events that happen while Syncle
+> is offline can't be recovered, so prefer a watch hook there if you need
 > guarantees.
 
 ## Scripts
