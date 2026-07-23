@@ -5,13 +5,13 @@
   "description": "Syncle — keep any databases in sync, live and across engines (PostgreSQL, MySQL, SQLite, MongoDB, Redis), with HTTP endpoints as an extra destination.",
   "author": "Osman Ahmadzai",
   "license": "MIT",
-  "homepage": "https://github.com/ozmanghani/syncle#readme",
+  "homepage": "https://github.com/osmanahmadxai/SYNCLE#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ozmanghani/syncle.git"
+    "url": "git+https://github.com/osmanahmadxai/SYNCLE.git"
   },
   "bugs": {
-    "url": "https://github.com/ozmanghani/syncle/issues"
+    "url": "https://github.com/osmanahmadxai/SYNCLE/issues"
   },
   "engines": {
     "node": ">=22"
