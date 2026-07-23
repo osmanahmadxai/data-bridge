@@ -12,7 +12,7 @@ Syncle is a pnpm monorepo (`web → api → core`). You'll need:
 - **Docker** (for the bundled Postgres + Redis)
 
 ```bash
-git clone https://github.com/ozmanghani/syncle.git
+git clone https://github.com/osmanahmadxai/SYNCLE.git
 cd syncle
 pnpm install
 docker compose up -d          # postgres (metadata) + redis (queue)
