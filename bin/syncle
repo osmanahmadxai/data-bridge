@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# Syncle launcher — controls the bundled Docker stack (web GUI + API + Postgres
+# + Redis). Installed to your PATH by install.sh; the app itself lives under
+# ${SYNCLE_HOME:-~/.syncle}/app.
+set -euo pipefail
+
+SYNCLE_HOME="${SYNCLE_HOME:-$HOME/.syncle}"
+APP_DIR="$SYNCLE_HOME/app"
+COMPOSE_FILE="$APP_DIR/docker-compose.app.yml"
+WEB_URL="http://localhost:3002"
+
+die() { printf 'syncle: %s\n' "$1" >&2; exit 1; }
+
+[ -f "$COMPOSE_FILE" ] || die "app not found at $APP_DIR. Re-run the installer."
+command -v docker >/dev/null 2>&1 || die "Docker is not installed. See https://docs.docker.com/get-docker/"
+docker compose version >/dev/null 2>&1 || die "Docker Compose v2 is required (comes with Docker Desktop / the compose plugin)."
+
+compose() { docker compose -f "$COMPOSE_FILE" "$@"; }
+
+open_url() {
+  if command -v open >/dev/null 2>&1; then open "$1"
+  elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$1"
+  else printf 'Open %s in your browser.\n' "$1"; fi
+}
+
+wait_for_web() {
+  printf 'Waiting for the web GUI'
+  for _ in $(seq 1 60); do
+    if curl -fsS -o /dev/null "$WEB_URL" 2>/dev/null; then printf ' ready.\n'; return 0; fi
+    printf '.'; sleep 2
+  done
+  printf '\n'; printf 'Still starting — check `syncle logs`.\n'
+}
+
+usage() {
+  cat <<EOF
+Syncle — keep any databases in sync, with a web GUI.
+
+Usage: syncle <command>
+
+  up          Build (first run) and start everything, then open the GUI
+  down        Stop and remove the containers (data is kept)
+  restart     Restart the running containers
+  status      Show container status
+  logs [svc]  Follow logs (optionally: api | web | postgres | redis)
+  open        Open the web GUI in your browser
+  update      Pull the latest Syncle and rebuild
+  uninstall   Stop everything and delete all data (asks first)
+  version     Show the installed Syncle version
+EOF
+}
+
+cmd="${1:-up}"
+case "$cmd" in
+  up)
+    compose up -d --build
+    wait_for_web
+    open_url "$WEB_URL"
+    printf 'Syncle is running at %s\n' "$WEB_URL"
+    ;;
+  down)    compose down ;;
+  restart) compose restart ;;
+  status|ps) compose ps ;;
+  logs)    shift || true; compose logs -f "$@" ;;
+  open)    open_url "$WEB_URL" ;;
+  update)
+    git -C "$APP_DIR" pull --ff-only
+    compose up -d --build
+    printf 'Updated. %s\n' "$WEB_URL"
+    ;;
+  uninstall)
+    printf 'This deletes all Syncle containers, images and DATA. Continue? [y/N] '
+    read -r ans
+    case "$ans" in
+      y|Y)
+        compose down -v --rmi local || true
+        rm -rf "$SYNCLE_HOME"
+        # Best-effort removal of the launcher from common locations.
+        for d in /usr/local/bin "$HOME/.local/bin"; do
+          [ -f "$d/syncle" ] && { rm -f "$d/syncle" 2>/dev/null || sudo rm -f "$d/syncle"; }
+        done
+        printf 'Uninstalled.\n'
+        ;;
+      *) printf 'Cancelled.\n' ;;
+    esac
+    ;;
+  version|-v|--version)
+    v=$(node -p "require('$APP_DIR/package.json').version" 2>/dev/null || echo unknown)
+    printf 'Syncle %s\n' "$v"
+    ;;
+  help|-h|--help) usage ;;
+  *) usage; exit 1 ;;
+esac
